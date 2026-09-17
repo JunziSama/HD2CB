@@ -3,8 +3,10 @@
 const MODES = ['hidden', 'right-mouse', 'always'];
 const LABELS = ['隐藏', '按住右键显示', '游戏内常显'];
 const ACTIONS = ['toggle', 'quit', 'weapon'];
-const WEAPON_IDS = ['epoch', 'railgun'];
+const WEAPON_IDS = ['epoch', 'railgun', 'quasar'];
 const WEAPONS = {
+  quasar: { name: 'LAS-99 类星体加农炮', shortName: '类星体加农炮', duration: 3000, markers: [],
+    description: '3 秒蓄力后自动发射，不会过载自爆 · 满格青色保持 0.5 秒后隐藏' },
   epoch: { name: 'PLAS-45 纪元', shortName: '纪元', duration: 3250,
     markers: [{ at: 1000, label: '1.0 秒：可发射' }, { at: 2500, label: '2.5 秒：高穿甲' }, { at: 2600, label: '2.6 秒：满伤害' }],
     description: '1.0 秒可发射 · 2.5 秒高穿甲 · 2.6 秒满伤害 · 3.25 秒炸膛上限' },
@@ -170,7 +172,7 @@ class ChargeState {
 function chargeStyle(elapsed, weapon) {
   const profile = WEAPONS[weapon || 'epoch'];
   return { percent: Math.max(0, Math.min(elapsed / profile.duration, 1)) * 100,
-    color: weapon === 'railgun' ? (elapsed < 450 ? 'gray' : elapsed < 2000 ? 'green' : elapsed < 2500 ? 'yellow' : 'red') :
+    color: weapon === 'quasar' ? (elapsed < 3000 ? 'green' : 'cyan') : weapon === 'railgun' ? (elapsed < 450 ? 'gray' : elapsed < 2000 ? 'green' : elapsed < 2500 ? 'yellow' : 'red') :
       elapsed < 1000 ? 'gray' : elapsed < 2500 ? 'green' : elapsed < 2600 ? 'yellow' : 'red' };
 }
 

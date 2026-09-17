@@ -277,7 +277,7 @@ test('main-process deadlines hide railgun without mouse events and cancel stale 
   h.monitors[0].emit('state', focus); assert(!h.windows[0].visible);
   h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); assert(h.windows[0].visible);
   const callbackBeforeSwitch = h.timerHistory[h.timerHistory.length - 1];
-  h.bindings.get('F3')(); h.advance(0); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'epoch');
+  h.bindings.get('F3')(); h.advance(0); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'quasar');
   h.advance(2000); assert.strictEqual(h.windows[0].last.data.notice, null);
   h.app.quit(); assert.strictEqual(h.timers.size, 0);
 });
@@ -340,5 +340,34 @@ test('open tray defers replacement until close and settings changes invalidate q
   h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft); h.advance(0);
   assert(!h.bindings.has('F3')); assert(h.bindings.has('Ctrl+F9'));
   assert.strictEqual(h.api.status().config.weapon, 'railgun'); h.app.quit();
+});
+
+test('quasar has green charging, cyan completion, no damage markers and persists in v2', () => {
+  [0, 1000, 2999].forEach(t => assert.strictEqual(state.chargeStyle(t, 'quasar').color, 'green'));
+  assert.strictEqual(state.chargeStyle(3000, 'quasar').color, 'cyan');
+  assert.strictEqual(state.chargeStyle(3500, 'quasar').percent, 100);
+  assert.strictEqual(state.WEAPONS.quasar.markers.length, 0);
+  const config = state.defaults(); config.weapon = 'quasar';
+  const file = path.join(temp, 'quasar.json'); configIO.writeConfig(file, config);
+  assert.deepStrictEqual(configIO.readConfig(file).config, config);
+  const model = new state.ChargeState('always', 'quasar'); model.setFocus(true, 0);
+  model.mouse(1, true, 0); model.mouse(1, false, 2999); assert.strictEqual(model.snapshot(3000).phase, 'idle');
+  model.mouse(1, true, 4000); model.mouse(1, false, 7100); assert(model.snapshot(7199).visible);
+  model.mouse(1, true, 7200); assert.strictEqual(model.snapshot(7500).elapsed, 300);
+  model.setFocus(false, 7600); model.setFocus(true, 7700); assert.strictEqual(model.snapshot(7700).elapsed, 0);
+});
+test('three-weapon shortcut cycle preserves native registrations and cancels quasar deadlines', () => {
+  const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
+  const resets = h.shortcuts.resets;
+  ['railgun', 'quasar', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
+    h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, weapon);
+  });
+  assert.strictEqual(h.shortcuts.resets, resets);
+  h.hook.emit('mousedown', { button: 2 }); h.hook.emit('mousedown', { button: 1 });
+  h.advance(3000); assert.strictEqual(h.windows[0].last.data.phase, 'complete');
+  const old = h.timerHistory[h.timerHistory.length - 1];
+  h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 });
+  old(); h.advance(500); assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'charging');
+  h.app.quit();
 });
 console.log('\n' + count + ' tests passed.');
