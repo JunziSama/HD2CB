@@ -46,15 +46,28 @@
       left: 0;
     }
 
-    #marker1 { bottom: 66.7%; } /* 2秒 */
-    #marker2 { bottom: 83.3%; } /* 2.5秒 */
+    #weaponNotice {
+      display: none;
+      position: absolute;
+      left: 18px;
+      top: 50%;
+      transform: translateY(-50%);
+      white-space: nowrap;
+      padding: 5px 9px;
+      border: 1px solid rgba(241, 212, 77, 0.65);
+      border-radius: 4px;
+      background: rgba(16, 24, 32, 0.9);
+      color: #f1d44d;
+      font: 14px 'Microsoft YaHei', sans-serif;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
   <div id="barContainer">
     <div id="fill"></div>
-    <div class="marker" id="marker1"></div>
-    <div class="marker" id="marker2"></div>
+    <div id="markers"></div>
+    <div id="weaponNotice" role="status"></div>
   </div>
   <script src="renderer.js"></script>
 </body>

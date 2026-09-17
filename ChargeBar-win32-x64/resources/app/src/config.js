@@ -5,7 +5,8 @@ const { defaults, validateConfig } = require('./state');
 
 function readConfig(filename) {
   try {
-    return { config: validateConfig(JSON.parse(fs.readFileSync(filename, 'utf8'))), warning: null };
+    const stored = JSON.parse(fs.readFileSync(filename, 'utf8'));
+    return { config: validateConfig(stored), warning: null, migrated: stored.version === 1 };
   } catch (error) {
     return { config: defaults(), warning: error.code === 'ENOENT' ? null : '配置无法读取或已损坏，本次已使用默认设置。' };
   }

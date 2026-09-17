@@ -1,7 +1,7 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require('electron');
 const path = require('path');
-const { MODES, LABELS, validateConfig, isHD2, ChargeState } = require('./state');
+const { MODES, LABELS, ACTIONS, WEAPON_IDS, WEAPONS, validateConfig, isHD2, ChargeState } = require('./state');
 const { readConfig, writeConfig } = require('./config');
 const FocusMonitor = require('./focus-monitor');
 
@@ -17,6 +17,8 @@ let configWarning = null;
 let shortcutErrors = [];
 let pendingSecondLaunch = false;
 let notifiedShortcutError = '';
+let transitionTimer = null;
+let transitionRevision = 0;
 
 function notify(message) {
   if (!tray || quitting) return;
@@ -33,9 +35,25 @@ function sendSettings() {
   if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send('settings-state', status());
 }
 
+function clearTransitionTimer() {
+  transitionRevision++;
+  if (transitionTimer !== null) clearTimeout(transitionTimer);
+  transitionTimer = null;
+}
+
 function publishOverlay() {
+  clearTransitionTimer();
+  if (quitting) return;
+  const now = Date.now();
+  const state = charge.snapshot(now);
+  const deadline = charge.nextDeadline();
+  if (deadline !== null) {
+    const revision = transitionRevision;
+    transitionTimer = setTimeout(() => {
+      if (revision === transitionRevision && !quitting) publishOverlay();
+    }, Math.max(0, deadline - now));
+  }
   if (!overlay || overlay.isDestroyed() || !overlayReady) return;
-  const state = charge.snapshot(Date.now());
   overlay.webContents.send('charge-state', state);
   if (state.visible) {
     if (!overlay.isVisible()) overlay.showInactive();
@@ -51,20 +69,26 @@ function refreshTray() {
       label: LABELS[index], type: 'radio', checked: config.mode === mode,
       click: () => changeMode(mode)
     })) },
+    { label: '当前武器', submenu: WEAPON_IDS.map(weapon => ({
+      label: WEAPONS[weapon].name, type: 'radio', checked: config.weapon === weapon,
+      click: () => changeWeapon(weapon)
+    })) },
     { type: 'separator' },
     { label: '启用切换模式热键（' + config.hotkeys.toggle.accelerator + '）',
       type: 'checkbox', checked: config.hotkeys.toggle.enabled, click: () => toggleHotkey('toggle') },
     { label: '启用退出热键（' + config.hotkeys.quit.accelerator + '）',
       type: 'checkbox', checked: config.hotkeys.quit.enabled, click: () => toggleHotkey('quit') },
+    { label: '启用切换武器热键（' + config.hotkeys.weapon.accelerator + '）',
+      type: 'checkbox', checked: config.hotkeys.weapon.enabled, click: () => toggleHotkey('weapon') },
     { label: '热键仅在 HD2 前台时生效', enabled: false },
-    { label: '热键设置…', click: openSettings }
+    { label: '武器与热键设置…', click: openSettings }
   ];
   if (shortcutErrors.length) menu.push({ label: '热键冲突：打开设置查看', click: openSettings });
   if (inputError) menu.push({ label: '鼠标监听异常：打开设置查看', click: openSettings });
   if (configWarning) menu.push({ label: '配置提示：打开设置查看', click: openSettings });
   menu.push({ label: '重新检测', click: restartDetection }, { type: 'separator' }, { label: '退出 HD2CB', click: () => app.quit() });
   tray.setContextMenu(Menu.buildFromTemplate(menu));
-  tray.setToolTip('HD2CB · ' + modeLabel + '\n' + detection);
+  tray.setToolTip('HD2CB · ' + WEAPONS[config.weapon].shortName + ' · ' + modeLabel + '\n' + detection);
   sendSettings();
 }
 
@@ -74,7 +98,7 @@ function syncShortcuts() {
   if (!charge.focused) return;
   shortcutErrors = [];
   if (charge.focused) {
-    ['toggle', 'quit'].forEach(action => {
+    ACTIONS.forEach(action => {
       const item = config.hotkeys[action];
       if (!item.enabled) return;
       let registered = false;
@@ -82,6 +106,7 @@ function syncShortcuts() {
         registered = globalShortcut.register(item.accelerator, () => {
           if (!charge.focused) return;
           if (action === 'quit') app.quit();
+          else if (action === 'weapon') changeWeapon(WEAPON_IDS[(WEAPON_IDS.indexOf(config.weapon) + 1) % WEAPON_IDS.length]);
           else changeMode(MODES[(MODES.indexOf(config.mode) + 1) % MODES.length]);
         });
       } catch (error) { /* Report unsupported/reserved accelerators like conflicts. */ }
@@ -103,6 +128,7 @@ function applyConfig(candidate) {
   configWarning = null;
   shortcutErrors = [];
   charge.setMode(config.mode);
+  charge.setWeapon(config.weapon);
   notifiedShortcutError = '';
   syncShortcuts();
   publishOverlay();
@@ -116,6 +142,13 @@ function changeMode(mode) {
   catch (error) { notify(error.message); refreshTray(); }
 }
 
+function changeWeapon(weapon) {
+  const next = JSON.parse(JSON.stringify(config));
+  next.weapon = weapon;
+  try { applyConfig(next); }
+  catch (error) { notify(error.message); refreshTray(); }
+}
+
 function toggleHotkey(action) {
   const next = JSON.parse(JSON.stringify(config));
   next.hotkeys[action].enabled = !next.hotkeys[action].enabled;
@@ -125,7 +158,7 @@ function toggleHotkey(action) {
 
 function updateFocus(focused) {
   const changed = charge.focused !== focused;
-  charge.setFocus(focused);
+  charge.setFocus(focused, Date.now());
   if (changed) syncShortcuts();
   publishOverlay();
 }
@@ -154,8 +187,8 @@ function openSettings() {
     settingsWindow.focus();
     return;
   }
-  settingsWindow = new BrowserWindow({ width: 600, height: 620, resizable: false, show: false,
-    title: 'HD2CB 设置', autoHideMenuBar: true, backgroundColor: '#101820',
+  settingsWindow = new BrowserWindow({ width: 660, height: 740, resizable: false, show: false,
+    title: 'HD2CB · 武器与热键设置', autoHideMenuBar: true, backgroundColor: '#101820',
     icon: path.join(__dirname, 'tray.png'),
     webPreferences: { nodeIntegration: true, contextIsolation: false, defaultEncoding: 'UTF-8' }
   });
@@ -178,8 +211,8 @@ function setupIPC() {
     if (!trusted(event)) return;
     try {
       if (!draft || typeof draft !== 'object') throw new Error('设置格式无效。');
-      // The form owns hotkeys only; the tray may have changed the mode while it was open.
-      applyConfig({ version: 1, mode: config.mode, hotkeys: draft.hotkeys });
+      // The tray owns display mode; settings edit only the submitted fields.
+      applyConfig({ version: 2, mode: config.mode, weapon: draft.weapon, hotkeys: draft.hotkeys });
       event.sender.send('settings-result', { ok: true, message: '设置已保存。热键将在 HD2 前台时生效。' });
     } catch (error) { event.sender.send('settings-result', { ok: false, message: error.message }); }
   });
@@ -192,7 +225,11 @@ function initialize() {
   const loaded = readConfig(configFile);
   config = loaded.config;
   configWarning = loaded.warning;
-  charge = new ChargeState(config.mode);
+  if (loaded.migrated) {
+    try { writeConfig(configFile, config); }
+    catch (error) { configWarning = '旧配置已迁移，但保存失败：' + error.message; }
+  }
+  charge = new ChargeState(config.mode, config.weapon);
   tray = new Tray(path.join(__dirname, 'tray.png'));
   tray.on('click', () => tray.popUpContextMenu());
   tray.on('double-click', openSettings);
@@ -244,6 +281,7 @@ else {
   app.on('window-all-closed', () => { /* Tray owns the application lifetime. */ });
   app.on('before-quit', () => {
     quitting = true;
+    clearTransitionTimer();
     if (monitor) monitor.stop();
     globalShortcut.unregisterAll();
     // iohook 0.9.2's Windows unload races its hook thread and crashes this build.

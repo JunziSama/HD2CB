@@ -2,11 +2,22 @@
 
 const MODES = ['hidden', 'right-mouse', 'always'];
 const LABELS = ['隐藏', '按住右键显示', '游戏内常显'];
+const ACTIONS = ['toggle', 'quit', 'weapon'];
+const WEAPON_IDS = ['epoch', 'railgun'];
+const WEAPONS = {
+  epoch: { name: 'PLAS-45 纪元', shortName: '纪元', duration: 3250,
+    markers: [{ at: 1000, label: '1.0 秒：可发射' }, { at: 2500, label: '2.5 秒：高穿甲' }, { at: 2600, label: '2.6 秒：满伤害' }],
+    description: '1.0 秒可发射 · 2.5 秒高穿甲 · 2.6 秒满伤害 · 3.25 秒炸膛上限' },
+  railgun: { name: 'RS-422 磁轨炮（不安全模式）', shortName: '磁轨炮', duration: 3000,
+    markers: [{ at: 450, label: '0.45 秒：可发射' }, { at: 2000, label: '2.0 秒：高蓄力提醒' }, { at: 2500, label: '2.5 秒：危险区提醒' }],
+    description: '不安全模式：0.45 秒可发射 · 2 秒黄 / 2.5 秒红色提醒 · 3 秒过载上限'  }
+};
 
 function defaults() {
-  return { version: 1, mode: 'right-mouse', hotkeys: {
+  return { version: 2, mode: 'right-mouse', weapon: 'epoch', hotkeys: {
     toggle: { enabled: true, accelerator: 'F1' },
-    quit: { enabled: true, accelerator: 'F2' }
+    quit: { enabled: true, accelerator: 'F2' },
+    weapon: { enabled: true, accelerator: 'F3' }
   } };
 }
 
@@ -36,17 +47,26 @@ function normalizeAccelerator(value) {
 }
 
 function validateConfig(value) {
-  if (!value || value.version !== 1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
+  if (!value || [1, 2].indexOf(value.version) === -1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
     throw new Error('配置格式或显示模式无效。');
   }
-  const result = { version: 1, mode: value.mode, hotkeys: {} };
-  ['toggle', 'quit'].forEach(action => {
+  const legacy = value.version === 1;
+  const weapon = legacy ? 'epoch' : value.weapon;
+  if (WEAPON_IDS.indexOf(weapon) === -1) throw new Error('武器选择无效。');
+  const result = { version: 2, mode: value.mode, weapon: weapon, hotkeys: {} };
+  const used = [];
+  (legacy ? ['toggle', 'quit'] : ACTIONS).forEach(action => {
     const item = value.hotkeys[action];
     if (!item || typeof item.enabled !== 'boolean') throw new Error('热键开关无效。');
-    result.hotkeys[action] = { enabled: item.enabled, accelerator: normalizeAccelerator(item.accelerator) };
+    const accelerator = normalizeAccelerator(item.accelerator);
+    if (used.indexOf(accelerator) !== -1) throw new Error('三项操作不能使用相同的快捷键。');
+    used.push(accelerator);
+    result.hotkeys[action] = { enabled: item.enabled, accelerator: accelerator };
   });
-  if (result.hotkeys.toggle.accelerator === result.hotkeys.quit.accelerator) {
-    throw new Error('切换模式和退出程序不能使用相同的快捷键。');
+  if (legacy) {
+    let key = 3;
+    while (used.indexOf('F' + key) !== -1) key++;
+    result.hotkeys.weapon = { enabled: true, accelerator: 'F' + key };
   }
   return result;
 }
@@ -58,38 +78,100 @@ function isHD2(state) {
 }
 
 class ChargeState {
-  constructor(mode) {
+  constructor(mode, weapon) {
     this.mode = mode;
+    this.weapon = weapon || 'epoch';
     this.focused = false;
-    this.reset();
+    this.left = false;
+    this.right = false;
+    this.requireRelease = false;
+    this.startedAt = null;
+    this.phase = 'idle';
+    this.noticePending = false;
+    this.noticeUntil = null;
   }
-  reset() { this.left = false; this.right = false; this.startedAt = 0; }
-  setFocus(focused) {
-    if (this.focused !== focused || !focused) this.reset();
+  advance(now) {
+    if (this.startedAt === null) return;
+    const elapsed = now - this.startedAt;
+    const duration = WEAPONS[this.weapon].duration;
+    if (this.phase === 'charging' && elapsed >= duration) this.phase = 'complete';
+    if (this.phase === 'complete' && elapsed >= duration + 500) this.phase = 'waiting';
+  }
+  setFocus(focused, now) {
+    this.advance(now === undefined ? Date.now() : now);
+    if (!focused) {
+      this.phase = (this.phase === 'complete' || this.phase === 'waiting') ? 'waiting' : 'idle';
+      this.left = false;
+      this.right = false;
+      this.requireRelease = false;
+      this.startedAt = null;
+      // A notice not yet shown survives opening settings; an already visible one ends.
+      this.noticeUntil = null;
+    }
     this.focused = focused;
   }
   setMode(mode) {
     if (MODES.indexOf(mode) === -1) throw new Error('无效显示模式');
     this.mode = mode;
   }
+  setWeapon(weapon) {
+    if (WEAPON_IDS.indexOf(weapon) === -1) throw new Error('武器选择无效。');
+    if (weapon === this.weapon) return;
+    this.weapon = weapon;
+    this.requireRelease = this.requireRelease || this.left;
+    this.left = false;
+    this.startedAt = null;
+    this.phase = 'idle';
+    this.noticeUntil = null;
+    this.noticePending = true;
+  }
   mouse(button, down, now) {
     if (!this.focused) return;
+    this.advance(now);
     if (button === 1) {
-      if (down && !this.left) this.startedAt = now;
-      this.left = down;
+      if (!down) {
+        this.left = false;
+        this.requireRelease = false;
+        if (this.phase === 'charging') { this.phase = 'idle'; this.startedAt = null; }
+      } else if (!this.left && !this.requireRelease) {
+        this.left = true;
+        this.startedAt = now;
+        this.phase = 'charging';
+      }
     }
     if (button === 2) this.right = down;
   }
   snapshot(now) {
-    const visible = this.focused && (this.mode === 'always' || (this.mode === 'right-mouse' && this.right));
-    return { visible: visible, charging: visible && this.left,
-      elapsed: visible && this.left ? Math.max(0, now - this.startedAt) : 0 };
+    this.advance(now);
+    const visible = this.focused && this.phase !== 'waiting' &&
+      (this.mode === 'always' || (this.mode === 'right-mouse' && this.right));
+    if (this.noticeUntil !== null && (!visible || now >= this.noticeUntil)) this.noticeUntil = null;
+    if (this.noticePending && visible) {
+      this.noticePending = false;
+      this.noticeUntil = now + 2000;
+    }
+    const running = this.phase === 'charging' || this.phase === 'complete';
+    return { visible: visible, charging: visible && this.phase === 'charging',
+      elapsed: visible && running ? Math.max(0, now - this.startedAt) : 0,
+      weapon: this.weapon, phase: this.phase,
+      notice: visible && this.noticeUntil !== null ? WEAPONS[this.weapon].shortName : null };
+  }
+  nextDeadline() {
+    const deadlines = [];
+    if (this.focused && this.startedAt !== null) {
+      if (this.phase === 'charging') deadlines.push(this.startedAt + WEAPONS[this.weapon].duration);
+      if (this.phase === 'complete') deadlines.push(this.startedAt + WEAPONS[this.weapon].duration + 500);
+    }
+    if (this.noticeUntil !== null) deadlines.push(this.noticeUntil);
+    return deadlines.length ? Math.min.apply(Math, deadlines) : null;
   }
 }
 
-function chargeStyle(elapsed) {
-  return { percent: Math.max(0, Math.min(elapsed / 3000, 1)) * 100,
-    color: elapsed < 2000 ? 'green' : elapsed < 2500 ? 'yellow' : 'red' };
+function chargeStyle(elapsed, weapon) {
+  const profile = WEAPONS[weapon || 'epoch'];
+  return { percent: Math.max(0, Math.min(elapsed / profile.duration, 1)) * 100,
+    color: weapon === 'railgun' ? (elapsed < 450 ? 'gray' : elapsed < 2000 ? 'green' : elapsed < 2500 ? 'yellow' : 'red') :
+      elapsed < 1000 ? 'gray' : elapsed < 2500 ? 'green' : elapsed < 2600 ? 'yellow' : 'red' };
 }
 
-module.exports = { MODES, LABELS, defaults, normalizeAccelerator, validateConfig, isHD2, ChargeState, chargeStyle };
+module.exports = { MODES, LABELS, ACTIONS, WEAPON_IDS, WEAPONS, defaults, normalizeAccelerator, validateConfig, isHD2, ChargeState, chargeStyle };

@@ -49,19 +49,96 @@ test('all three display modes remain gated by focus', () => {
 test('focus loss resets held buttons and charge; heartbeat does not restart charge', () => {
   const model = new state.ChargeState('right-mouse');
   model.setFocus(true); model.mouse(2, true, 100); model.mouse(1, true, 100);
-  model.setFocus(true); assert.strictEqual(model.snapshot(2200).elapsed, 2100);
-  model.setFocus(false); model.mouse(1, true, 2300); model.setFocus(true);
-  assert.deepStrictEqual(model.snapshot(2400), { visible: false, charging: false, elapsed: 0 });
+  model.setFocus(true, 2200); assert.strictEqual(model.snapshot(2200).elapsed, 2100);
+  model.setFocus(false, 2300); model.mouse(1, true, 2300); model.setFocus(true, 2400);
+  assert.strictEqual(model.snapshot(2400).visible, false);
+  assert.strictEqual(model.snapshot(2400).elapsed, 0);
   model.mouse(2, true, 2500); assert(!model.snapshot(2600).charging);
   model.mouse(1, true, 2700); assert.strictEqual(model.snapshot(2800).elapsed, 100);
   model.mouse(1, false, 2900); assert.strictEqual(model.snapshot(3000).elapsed, 0);
 });
-test('charge thresholds remain 2, 2.5 and 3 seconds', () => {
-  assert.strictEqual(state.chargeStyle(1999).color, 'green');
-  assert.strictEqual(state.chargeStyle(2000).color, 'yellow');
-  assert.strictEqual(state.chargeStyle(2500).color, 'red');
-  assert.strictEqual(state.chargeStyle(3000).percent, 100);
-  assert.strictEqual(state.chargeStyle(9000).percent, 100);
+test('weapon colors, caps and markers match researched thresholds', () => {
+  [[999, 'gray'], [1000, 'green'], [2499, 'green'], [2500, 'yellow'], [2599, 'yellow'], [2600, 'red'], [3250, 'red']]
+    .forEach(pair => assert.strictEqual(state.chargeStyle(pair[0], 'epoch').color, pair[1]));
+  assert.strictEqual(state.chargeStyle(3250, 'epoch').percent, 100);
+  assert.strictEqual(state.chargeStyle(9000, 'epoch').percent, 100);
+  [[449, 'gray'], [450, 'green'], [1999, 'green'], [2000, 'yellow'], [2499, 'yellow'], [2500, 'red'], [2999, 'red']]
+    .forEach(pair => assert.strictEqual(state.chargeStyle(pair[0], 'railgun').color, pair[1]));
+  assert.strictEqual(state.chargeStyle(3000, 'railgun').color, 'red');
+  assert.strictEqual(state.chargeStyle(3000, 'railgun').percent, 100);
+  assert.deepStrictEqual(state.WEAPONS.epoch.markers.map(item => item.at), [1000, 2500, 2600]);
+  assert.deepStrictEqual(state.WEAPONS.railgun.markers.map(item => item.at), [450, 2000, 2500]);
+});
+test('legacy migration preserves settings and chooses an unused weapon shortcut', () => {
+  const old = { version: 1, mode: 'always', hotkeys: { toggle: { enabled: false, accelerator: 'f3' }, quit: { enabled: true, accelerator: 'F4' } } };
+  const migrated = state.validateConfig(old);
+  assert.strictEqual(migrated.version, 2); assert.strictEqual(migrated.weapon, 'epoch');
+  assert.strictEqual(migrated.mode, 'always'); assert.strictEqual(migrated.hotkeys.toggle.enabled, false);
+  assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
+  assert.strictEqual(old.version, 1);
+  const filename = path.join(temp, 'legacy.json'); fs.writeFileSync(filename, JSON.stringify(old));
+  assert(configIO.readConfig(filename).migrated); assert.strictEqual(configIO.readConfig(filename).warning, null);
+  const duplicate = state.defaults(); duplicate.hotkeys.weapon.accelerator = 'F2';
+  assert.throws(() => state.validateConfig(duplicate));
+  assert.throws(() => state.validateConfig(Object.assign(state.defaults(), { weapon: 'unknown' })));
+});
+test('railgun holds red for 500 ms, ignores release after full charge, and waits through focus changes', () => {
+  const model = new state.ChargeState('always', 'railgun'); model.setFocus(true, 0);
+  model.mouse(1, true, 100);
+  assert.strictEqual(model.snapshot(3099).phase, 'charging');
+  assert.strictEqual(model.snapshot(3100).phase, 'complete');
+  model.mouse(1, false, 3200); assert.strictEqual(model.snapshot(3200).elapsed, 3100);
+  assert(model.snapshot(3599).visible); assert(!model.snapshot(3600).visible);
+  model.setFocus(false, 3700); model.setFocus(true, 3800); assert(!model.snapshot(3800).visible);
+  model.mouse(1, true, 3900); assert(model.snapshot(3900).visible);
+  assert.strictEqual(model.snapshot(3900).elapsed, 0);
+});
+test('railgun early release cancels, held left cannot restart, fresh click can restart during red hold', () => {
+  const model = new state.ChargeState('always', 'railgun'); model.setFocus(true, 0);
+  model.mouse(1, true, 0); model.mouse(1, false, 2999);
+  assert.strictEqual(model.snapshot(3000).phase, 'idle');
+  model.mouse(1, true, 4000); assert(!model.snapshot(7500).visible);
+  model.mouse(1, true, 7600); assert(!model.snapshot(7600).visible);
+  model.mouse(1, false, 7700); model.mouse(1, true, 7800);
+  model.mouse(1, false, 10900); model.mouse(1, true, 11000);
+  assert.strictEqual(model.snapshot(11300).phase, 'charging');
+  assert.strictEqual(model.snapshot(11300).elapsed, 300);
+});
+test('railgun hide takes precedence over every display mode, including right mouse held', () => {
+  state.MODES.forEach(mode => {
+    const model = new state.ChargeState(mode, 'railgun'); model.setFocus(true, 0);
+    model.mouse(2, true, 0); model.mouse(1, true, 0);
+    assert.strictEqual(model.snapshot(3000).visible, mode !== 'hidden');
+    assert(!model.snapshot(3500).visible);
+    model.setMode('always'); assert(!model.snapshot(3600).visible);
+    model.mouse(1, false, 3700); model.mouse(1, true, 3800); assert(model.snapshot(3800).visible);
+  });
+});
+test('weapon change cancels old charge, requires fresh press and preserves aiming visibility', () => {
+  const model = new state.ChargeState('right-mouse', 'epoch'); model.setFocus(true, 0);
+  model.mouse(2, true, 0); model.mouse(1, true, 0); model.setWeapon('railgun');
+  assert(model.snapshot(100).visible); assert.strictEqual(model.snapshot(100).elapsed, 0);
+  model.mouse(1, true, 200); assert.strictEqual(model.snapshot(200).phase, 'idle');
+  model.mouse(1, false, 300); model.mouse(1, true, 400);
+  assert.strictEqual(model.snapshot(500).elapsed, 100);
+});
+test('weapon notice waits for a visible bar, lasts 2 seconds and does not replay after hiding', () => {
+  const model = new state.ChargeState('right-mouse', 'epoch'); model.setWeapon('railgun');
+  assert.strictEqual(model.snapshot(100).notice, null);
+  model.setFocus(false, 200); model.setFocus(true, 1000);
+  assert.strictEqual(model.snapshot(1000).notice, null);
+  model.mouse(2, true, 2000);
+  assert.strictEqual(model.snapshot(2000).notice, '磁轨炮');
+  assert.strictEqual(model.snapshot(3999).notice, '磁轨炮');
+  assert.strictEqual(model.snapshot(4000).notice, null);
+  model.setWeapon('epoch'); assert.strictEqual(model.snapshot(4100).notice, '纪元');
+  model.mouse(2, false, 4200); assert.strictEqual(model.snapshot(4200).notice, null);
+  model.mouse(2, true, 4300); assert.strictEqual(model.snapshot(4300).notice, null);
+  model.setMode('hidden'); model.setWeapon('railgun'); model.setWeapon('epoch');
+  assert.strictEqual(model.snapshot(4400).notice, null);
+  model.setMode('always'); assert.strictEqual(model.snapshot(4500).notice, '纪元');
+  model.setFocus(false, 4600); model.setFocus(true, 4700);
+  assert.strictEqual(model.snapshot(4700).notice, null);
 });
 test('config round trip, corruption fallback and write failure', () => {
   const filename = path.join(temp, 'settings.json');
@@ -104,15 +181,32 @@ function harness(lock) {
     register: (key, callback) => { if (key === shortcuts.blocked) return false; bindings.set(key, callback); return true; } };
   const electron = { app, BrowserWindow: Window, Tray, Menu: { buildFromTemplate: items => items },
     globalShortcut: shortcuts, ipcMain };
+  let clock = 1000, timerId = 0;
+  const timers = new Map(), timerHistory = [];
+  function schedule(callback, duration) {
+    const id = ++timerId;
+    timers.set(id, { at: clock + duration, callback: callback });
+    timerHistory.push(callback); return id;
+  }
+  function advance(milliseconds) {
+    const target = clock + milliseconds;
+    while (true) {
+      const next = Array.from(timers.entries()).filter(item => item[1].at <= target).sort((a, b) => a[1].at - b[1].at)[0];
+      if (!next) break;
+      timers.delete(next[0]); clock = next[1].at; next[1].callback();
+    }
+    clock = target;
+  }
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/main.js'), 'utf8'), {
     require: name => name === 'electron' ? electron : name === 'iohook' ? hook : name === './focus-monitor' ? Monitor :
       name[0] === '.' ? require(path.join(__dirname, '../src', name)) : require(name),
-    module, __dirname: path.join(__dirname, '../src'), setTimeout: () => {}
+    module, __dirname: path.join(__dirname, '../src'), Date: { now: () => clock },
+    setTimeout: schedule, clearTimeout: id => timers.delete(id)
   });
   app.emit('ready');
   if (windows[0]) windows[0].webContents.emit('did-finish-load');
-  return { app, windows, trays, monitors, ipcMain, hook, bindings, shortcuts, api: module.exports, userData };
+  return { app, windows, trays, monitors, ipcMain, hook, bindings, shortcuts, api: module.exports, userData, advance, timers, timerHistory };
 }
 test('secondary launch creates no tray, helper, hook or windows', () => {
   const h = harness(false);
@@ -126,7 +220,7 @@ test('startup notification, repeated launch, focus gating and shutdown cleanup',
   assert.strictEqual(h.trays.length, 1); assert.strictEqual(h.trays[0].balloons.length, 3);
   const win = h.windows[0]; assert(!win.visible); assert.strictEqual(win.options.focusable, false); assert(win.passthrough);
   const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
-  h.monitors[0].emit('state', focus); assert.strictEqual(h.bindings.size, 2);
+  h.monitors[0].emit('state', focus); assert.strictEqual(h.bindings.size, 3);
   h.hook.emit('mousedown', { button: 2 }); assert(win.visible);
   h.hook.emit('mousedown', { button: 1 }); assert(win.last.data.charging);
   h.monitors[0].emit('state', Object.assign({}, focus, { processName: 'notepad.exe' }));
@@ -143,7 +237,7 @@ test('tray mode, independent switches, conflict survives focus loss and helper f
   assert.strictEqual(h.api.status().shortcutErrors.length, 1);
   h.shortcuts.blocked = ''; h.monitors[0].emit('state', focus);
   h.trays[0].menu[1].submenu[2].click(); assert(h.windows[0].visible);
-  h.trays[0].menu[3].click(); assert(!h.bindings.has('F1')); assert(h.bindings.has('F2'));
+  h.trays[0].menu.find(item => item.label && item.label.indexOf('启用切换模式') === 0).click(); assert(!h.bindings.has('F1')); assert(h.bindings.has('F2'));
   h.monitors[0].emit('failure', 'timeout'); assert(!h.windows[0].visible); assert.strictEqual(h.bindings.size, 0);
   assert.strictEqual(h.api.status().detectorError, 'timeout');
   h.api.restartDetection(); assert.strictEqual(h.api.status().detectorError, null);
@@ -162,5 +256,60 @@ test('settings IPC validates sender and duplicate keys; saves custom hotkeys', (
   h.ipcMain.emit('settings-save', { sender: settings.webContents }, draft);
   assert.strictEqual(settings.last.data.ok, false);
   h.app.quit();
+});
+
+test('main-process deadlines hide railgun without mouse events and cancel stale callbacks', () => {
+  const h = harness();
+  const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
+  h.monitors[0].emit('state', focus);
+  h.trays[0].menu.find(item => item.label === '显示模式').submenu[2].click();
+  h.bindings.get('F3')(); assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  h.hook.emit('mousedown', { button: 1 }); h.advance(2999);
+  assert(h.windows[0].visible); h.advance(1);
+  assert.strictEqual(h.windows[0].last.data.phase, 'complete');
+  const oldCallback = h.timerHistory[h.timerHistory.length - 1];
+  h.hook.emit('mouseup', { button: 1 }); h.advance(100);
+  h.hook.emit('mousedown', { button: 1 }); oldCallback(); h.advance(400);
+  assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'charging');
+  h.advance(2600); assert.strictEqual(h.windows[0].last.data.phase, 'complete');
+  h.advance(500); assert(!h.windows[0].visible);
+  h.monitors[0].emit('state', Object.assign({}, focus, { processName: 'other.exe' }));
+  h.monitors[0].emit('state', focus); assert(!h.windows[0].visible);
+  h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); assert(h.windows[0].visible);
+  const callbackBeforeSwitch = h.timerHistory[h.timerHistory.length - 1];
+  h.bindings.get('F3')(); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'epoch');
+  h.advance(2000); assert.strictEqual(h.windows[0].last.data.notice, null);
+  h.app.quit(); assert.strictEqual(h.timers.size, 0);
+});
+test('third shortcut can be disabled and saving failure preserves selected weapon', () => {
+  const h = harness();
+  const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
+  h.monitors[0].emit('state', focus);
+  h.trays[0].menu.find(item => item.label && item.label.indexOf('启用切换武器') === 0).click();
+  assert(!h.bindings.has('F3')); assert(h.bindings.has('F1')); assert(h.bindings.has('F2'));
+  h.api.openSettings();
+  const draft = state.defaults(); draft.weapon = 'railgun'; draft.hotkeys.weapon.accelerator = 'Ctrl+F9';
+  h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft);
+  assert.strictEqual(h.api.status().config.weapon, 'railgun'); assert(h.bindings.has('Ctrl+F9'));
+  // A real file occupying the temp path forces an atomic-write failure without modifying production dependencies.
+  fs.mkdirSync(path.join(h.userData, 'settings.json.tmp'));
+  draft.weapon = 'epoch';
+  h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft);
+  assert.strictEqual(h.windows[1].last.data.ok, false);
+  assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  h.app.quit();
+});
+test('all weapons share the full-charge 500 ms hold and wait-for-next-click lifecycle', () => {
+  state.WEAPON_IDS.forEach(weapon => {
+    const duration = state.WEAPONS[weapon].duration;
+    const model = new state.ChargeState('always', weapon); model.setFocus(true, 0);
+    model.mouse(1, true, 0); assert.strictEqual(model.snapshot(duration - 1).phase, 'charging');
+    assert.strictEqual(model.snapshot(duration).phase, 'complete');
+    model.mouse(1, false, duration + 100); assert(model.snapshot(duration + 499).visible);
+    assert(!model.snapshot(duration + 500).visible);
+    model.setFocus(false, duration + 600); model.setFocus(true, duration + 700);
+    assert(!model.snapshot(duration + 700).visible);
+    model.mouse(1, true, duration + 800); assert(model.snapshot(duration + 800).visible);
+  });
 });
 console.log('\n' + count + ' tests passed.');

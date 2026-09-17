@@ -57,7 +57,20 @@ if (!secondary) {
       if (phase === 'restore') {
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
+        assert.strictEqual(api.status().config.weapon, 'railgun');
+        assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
         pass('Restart restores saved custom hotkeys and independent enable switches');
+        finish(); return;
+      }
+      if (phase === 'legacy') {
+        assert.strictEqual(api.status().config.version, 2);
+        assert.strictEqual(api.status().config.weapon, 'epoch');
+        assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'F3');
+        assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
+        assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'F5');
+        const migrated = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
+        assert.strictEqual(migrated.version, 2); assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
+        pass('Legacy settings migrate on startup without losing mode or shortcuts; occupied F3/F4 selects F5');
         finish(); return;
       }
       if (phase === 'corrupt') {
@@ -70,7 +83,7 @@ if (!secondary) {
       assert.strictEqual(api.status().config.mode, 'right-mouse');
       const overlay = BrowserWindow.getAllWindows()[0];
       assert(!overlay.isVisible());
-      assert(!globalShortcut.isRegistered('F1')); assert(!globalShortcut.isRegistered('F2'));
+      assert(!globalShortcut.isRegistered('F1')); assert(!globalShortcut.isRegistered('F2')); assert(!globalShortcut.isRegistered('F3'));
       pass('Actual Electron 4 startup, native iohook and focus helper load successfully; overlay and hotkeys inactive outside HD2');
       assert(balloons.some(item => item.content.indexOf('已启动') !== -1));
       assert(menu.items.some(item => item.label === '显示模式'));
@@ -133,22 +146,47 @@ if (!secondary) {
       await until(() => BrowserWindow.getAllWindows().some(win => win !== overlay && win.isVisible()), 'settings window');
       const settings = BrowserWindow.getAllWindows().filter(win => win !== overlay)[0];
       const ui = await settings.webContents.executeJavaScript('({ status: document.getElementById("status").textContent, key: document.getElementById("toggle-key").value, fits: document.documentElement.scrollHeight <= window.innerHeight })');
-      assert.strictEqual(ui.key, 'F1'); assert(ui.fits, 'Settings must fit without vertical clipping');
+      assert.strictEqual(ui.key, 'F1');
+      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-key").value'), 'F3');
+
       await new Promise(resolve => settings.capturePage(image => {
         fs.writeFileSync(path.join(output, 'settings.png'), image.toPNG()); resolve();
       }));
+      assert(ui.fits, 'Settings must fit without vertical clipping');
       pass('Chinese settings window loads without overflow; screenshot captured');
-      const save = hotkeys => settings.webContents.executeJavaScript(
-        'new Promise(resolve => { const ipc = require("electron").ipcRenderer; ipc.once("settings-result", (event, result) => resolve(result)); ipc.send("settings-save", ' + JSON.stringify({ hotkeys }) + '); })');
-      let result = await save({ toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' } });
+      const save = (weapon, hotkeys) => settings.webContents.executeJavaScript(
+        'new Promise(resolve => { const ipc = require("electron").ipcRenderer; ipc.once("settings-result", (event, result) => resolve(result)); ' +
+        'const draft = ' + JSON.stringify({ weapon, hotkeys }) + '; const select = document.getElementById("weapon-select"); select.value = draft.weapon; select.dispatchEvent(new Event("change")); ' +
+        'Object.keys(draft.hotkeys).forEach(action => { const key = document.getElementById(action + "-key"); key.value = draft.hotkeys[action].accelerator; key.dispatchEvent(new Event("input")); const enabled = document.getElementById(action + "-enabled"); enabled.checked = draft.hotkeys[action].enabled; enabled.dispatchEvent(new Event("change")); }); document.getElementById("save").click(); })');
+      let result = await save('railgun', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
       assert(result.ok, result.message);
       const saved = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
       assert.strictEqual(saved.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8'); assert.strictEqual(saved.hotkeys.quit.enabled, false);
-      result = await save({ toggle: { enabled: true, accelerator: 'F2' }, quit: { enabled: false, accelerator: 'F2' } });
-      assert(!result.ok);
+      assert.strictEqual(saved.weapon, 'railgun'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
+      assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('不安全模式') !== -1);
+      result = await save('epoch', { toggle: { enabled: true, accelerator: 'F2' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'F3' } });
+      assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'railgun');
       pass('Real renderer IPC saves custom shortcuts and independent switches; duplicate bindings rejected');
       settings.close(); assert.strictEqual(BrowserWindow.getAllWindows().length, 1);
       pass('Closing settings leaves the tray application running');
+
+
+      // Render actual overlay HTML in a separate test window; this does not claim game-focus coverage.
+      const preview = new BrowserWindow({ width: 500, height: 200, frame: false, show: false,
+        backgroundColor: '#101820', webPreferences: { nodeIntegration: true, contextIsolation: false } });
+      await new Promise(resolve => { preview.webContents.once('did-finish-load', resolve); preview.loadFile(path.join(__dirname, '../src/index.html')); });
+      preview.show();
+      for (const weapon of ['epoch', 'railgun']) {
+        preview.webContents.send('charge-state', { visible: true, charging: false, elapsed: weapon === 'epoch' ? 2600 : 3000,
+          weapon: weapon, phase: 'complete', notice: weapon === 'epoch' ? '纪元' : '磁轨炮' });
+        await delay(100);
+        const visual = await preview.webContents.executeJavaScript('(() => { const label = document.getElementById("weaponNotice"); const box = label.getBoundingClientRect(); return { fits: box.left >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight, text: label.textContent, color: document.getElementById("fill").style.backgroundColor, markers: document.querySelectorAll(".marker").length }; })()');
+        assert(visual.fits, 'Weapon notice must not be clipped'); assert.strictEqual(visual.color, 'red');
+        assert.strictEqual(visual.markers, 3);
+        await new Promise(resolve => preview.capturePage(image => { fs.writeFileSync(path.join(output, 'overlay-' + weapon + '.png'), image.toPNG()); resolve(); }));
+      }
+      preview.close();
+      pass('Actual overlay renderer shows per-weapon markers and unclipped weapon names; screenshots captured');
 
       helpers[0].kill();
       await until(() => !!api.status().detectorError, 'helper error status');

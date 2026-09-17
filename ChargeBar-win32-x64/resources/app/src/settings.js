@@ -1,35 +1,42 @@
 'use strict';
 const { ipcRenderer } = require('electron');
-const { defaults } = require('./state');
+const { defaults, ACTIONS, WEAPONS } = require('./state');
 const byId = id => document.getElementById(id);
-let dirty = false;
+let dirty = {};
 let loaded = false;
 
-function fill(config) {
-  ['toggle', 'quit'].forEach(action => {
-    byId(action + '-enabled').checked = config.hotkeys[action].enabled;
-    byId(action + '-key').value = config.hotkeys[action].accelerator;
+function describeWeapon() {
+  byId('weapon-description').textContent = WEAPONS[byId('weapon-select').value].description;
+}
+function fill(config, force) {
+  ACTIONS.forEach(action => {
+    if (force || !dirty[action]) {
+      byId(action + '-enabled').checked = config.hotkeys[action].enabled;
+      byId(action + '-key').value = config.hotkeys[action].accelerator;
+    }
   });
+  if (force || !dirty.selection) byId('weapon-select').value = config.weapon;
+  describeWeapon();
 }
 function message(text, error) {
   byId('message').textContent = text;
   byId('message').style.color = error ? '#ffb4a9' : '#a9dec2';
 }
 ipcRenderer.on('settings-state', (event, state) => {
-  if (!loaded || !dirty) fill(state.config);
+  fill(state.config, !loaded);
   loaded = true;
   byId('status').textContent = state.detection;
   byId('errors').textContent = [state.detectorError, state.inputError, state.configWarning]
     .concat(state.shortcutErrors).filter(Boolean).join('\n');
 });
 ipcRenderer.on('settings-result', (event, result) => {
-  if (result.ok) { dirty = false; ipcRenderer.send('settings-get'); }
+  if (result.ok) { dirty = {}; ipcRenderer.send('settings-get'); }
   message(result.message, !result.ok);
 });
-['toggle', 'quit'].forEach(action => {
-  byId(action + '-enabled').addEventListener('change', () => { dirty = true; });
+ACTIONS.forEach(action => {
+  byId(action + '-enabled').addEventListener('change', () => { dirty[action] = true; });
   const input = byId(action + '-key');
-  input.addEventListener('input', () => { dirty = true; });
+  input.addEventListener('input', () => { dirty[action] = true; });
   input.addEventListener('keydown', event => {
     if (['Control', 'Shift', 'Alt', 'Meta'].indexOf(event.key) !== -1) return;
     // Keep plain typing and standard clipboard commands available for textual entry.
@@ -45,18 +52,20 @@ ipcRenderer.on('settings-result', (event, result) => {
     if (event.shiftKey) parts.push('Shift');
     parts.push(key);
     input.value = parts.join('+');
-    dirty = true;
+    dirty[action] = true;
   });
 });
+byId('weapon-select').addEventListener('change', () => { dirty.selection = true; describeWeapon(); });
 byId('save').addEventListener('click', () => {
   const hotkeys = {};
-  ['toggle', 'quit'].forEach(action => {
+  ACTIONS.forEach(action => {
     hotkeys[action] = { enabled: byId(action + '-enabled').checked, accelerator: byId(action + '-key').value };
   });
-  ipcRenderer.send('settings-save', { hotkeys: hotkeys });
+  ipcRenderer.send('settings-save', { weapon: byId('weapon-select').value, hotkeys: hotkeys });
 });
 byId('defaults').addEventListener('click', () => {
-  fill(defaults()); dirty = true; message('已填入默认热键，请点击“保存设置”应用。', false);
+  fill(defaults(), true); dirty = { selection: true, toggle: true, quit: true, weapon: true };
+  message('已填入默认武器与热键，请点击“保存设置”应用。', false);
 });
 byId('cancel').addEventListener('click', () => ipcRenderer.send('settings-close'));
 byId('retry').addEventListener('click', () => ipcRenderer.send('settings-retry'));

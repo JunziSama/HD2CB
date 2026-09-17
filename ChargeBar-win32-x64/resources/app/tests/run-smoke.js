@@ -50,6 +50,10 @@ function run(phase) {
 }
 (async () => {
   const results = [await run('main'), await run('restore')];
+  fs.writeFileSync(path.join(output, 'userData', 'settings.json'), JSON.stringify({ version: 1, mode: 'always', hotkeys: {
+    toggle: { enabled: true, accelerator: 'F3' }, quit: { enabled: false, accelerator: 'F4' }
+  } }));
+  results.push(await run('legacy'));
   fs.writeFileSync(path.join(output, 'userData', 'settings.json'), '{corrupt');
   results.push(await run('corrupt'));
   // Allow orphan detection/OS teardown to settle, then verify all helper PIDs exited.
