@@ -15,18 +15,38 @@ if (!secondary) {
   }));
 }
 const balloons = [], helpers = [], checks = [];
-let menu, failure = null, game;
+let menu, nativeTray, failure = null, game;
+const diagnosticFile = path.join(output, 'hotkey-stages.log');
+function trace(stage) { fs.appendFileSync(diagnosticFile, Date.now() + ' ' + stage + '\n'); }
+['register', 'unregisterAll'].forEach(name => {
+  const original = globalShortcut[name];
+  globalShortcut[name] = function() {
+    trace(name + ' begin');
+    const args = Array.prototype.slice.call(arguments);
+    if (name === 'register') {
+      const callback = args[1];
+      args[1] = () => { trace('callback ' + args[0] + ' begin'); callback(); trace('callback ' + args[0] + ' end'); };
+    }
+    const result = original.apply(this, args); trace(name + ' end'); return result;
+  };
+});
+const configIO = require('../src/config');
+const originalWrite = configIO.writeConfig;
+configIO.writeConfig = function() {
+  trace('save begin');
+  try { return originalWrite.apply(this, arguments); } finally { trace('save end'); }
+};
 const originalBalloon = Tray.prototype.displayBalloon;
 Tray.prototype.displayBalloon = function(value) { balloons.push(value); return originalBalloon.call(this, value); };
 const originalMenu = Tray.prototype.setContextMenu;
-Tray.prototype.setContextMenu = function(value) { menu = value; return originalMenu.call(this, value); };
+Tray.prototype.setContextMenu = function(value) { menu = value; nativeTray = this; trace('tray begin'); const result = originalMenu.call(this, value); trace('tray end'); return result; };
 const originalSpawn = childProcess.spawn;
 childProcess.spawn = function(executable, args, options) {
   const child = originalSpawn.call(this, executable, args, options);
   if (/FocusMonitor\.exe$/i.test(executable)) helpers.push(child);
   return child;
 };
-const api = require('../src/main');
+const api = require(process.env.HD2CB_QA_MAIN || '../src/main');
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(predicate, description, timeout) {
   const started = Date.now();
@@ -110,6 +130,26 @@ if (!secondary) {
       game.stdin.on('error', () => {});
       await until(() => api.status().focused, 'test fixture foreground');
       assert(globalShortcut.isRegistered('F1')); assert(globalShortcut.isRegistered('F2'));
+      async function pressWeapon(key) {
+        const before = api.status().config.weapon;
+        game.stdin.write('key:' + key + '\n');
+        await until(() => api.status().config.weapon !== before, 'native weapon shortcut ' + key);
+      }
+      await pressWeapon('{F3}');
+      for (let i = 0; i < 8; i++) await pressWeapon('{F3}');
+      pass('Real Windows F3 dispatch switches weapon repeatedly and main loop remains responsive');
+      const modeBefore = api.status().config.mode;
+      game.stdin.write('key:{F1}\n');
+      await until(() => api.status().config.mode !== modeBefore, 'native F1');
+      menu.items.find(item => item.label === '显示模式').submenu.items[1].click();
+      // Save a custom key through the same trusted settings IPC used by the UI.
+      const custom = JSON.parse(JSON.stringify(api.status().config));
+      custom.hotkeys.weapon.accelerator = 'Ctrl+Shift+F9';
+      electron.ipcMain.emit('settings-save', { sender: launcher.webContents }, custom);
+      await pressWeapon('^+{F9}');
+      custom.hotkeys.weapon.accelerator = 'F3';
+      electron.ipcMain.emit('settings-save', { sender: launcher.webContents }, custom);
+      pass('Native F1 and custom Ctrl+Shift+F9 work after repeated F3 switches');
       assert(!overlay.isVisible());
       const hook = require('iohook');
       hook.emit('mousedown', { button: 2 }); hook.emit('mousedown', { button: 1 });
@@ -124,6 +164,14 @@ if (!secondary) {
       await until(() => !api.status().focused, 'minimize hides overlay');
       assert(!overlay.isVisible()); assert(!globalShortcut.isRegistered('F1'));
       pass('Minimizing fixture hides overlay and releases shortcuts in ' + (Date.now() - minimizeAt) + ' ms');
+      let opened = false, closed = false;
+      menu.once('menu-will-show', () => { opened = true; });
+      menu.once('menu-will-close', () => { closed = true; });
+      nativeTray.popUpContextMenu();
+      await until(() => opened, 'native tray menu opens after shortcuts');
+      game.stdin.write('activate\n');
+      await until(() => closed, 'native tray menu closes after shortcuts');
+      pass('Native tray context menu opens and closes after weapon shortcuts and focus loss');
       game.stdin.write('activate\n');
       await until(() => api.status().focused, 'fixture refocus');
       assert(!overlay.isVisible(), 'Old held buttons must not survive focus loss');

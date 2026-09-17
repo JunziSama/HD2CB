@@ -34,7 +34,12 @@ function run(phase) {
     const child = childProcess.spawn(path.join(runtime, 'ChargeBar.exe'), [], {
       env: Object.assign({}, env, { HD2CB_QA_PHASE: phase }), windowsHide: false, stdio: 'inherit'
     });
-    const timer = setTimeout(() => { child.kill(); reject(new Error('Smoke test timed out: ' + phase)); }, 45000);
+    const timer = setTimeout(() => {
+      const diagnostic = path.join(output, 'hotkey-stages.log');
+      fs.writeFileSync(path.join(output, 'timeout-' + phase + '.json'), JSON.stringify({ phase,
+        lastStages: fs.existsSync(diagnostic) ? fs.readFileSync(diagnostic, 'utf8').slice(-12000) : '' }, null, 2));
+      child.kill(); reject(new Error('Smoke test timed out: ' + phase));
+    }, 45000);
     child.on('error', error => { clearTimeout(timer); reject(error); });
     child.on('exit', code => {
       clearTimeout(timer);

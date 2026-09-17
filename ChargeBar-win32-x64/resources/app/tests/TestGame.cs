@@ -1,10 +1,12 @@
 using System;
 using System.Threading;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 // Isolated foreground test fixture, compiled under .qa as helldivers2.exe.
 internal static class TestGame
 {
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [STAThread] static void Main()
     {
         Application.EnableVisualStyles();
@@ -19,6 +21,11 @@ internal static class TestGame
                     window.BeginInvoke(new Action(delegate {
                         if (action == "minimize") window.WindowState = FormWindowState.Minimized;
                         if (action == "activate") { window.WindowState = FormWindowState.Normal; window.Activate(); }
+                        if (action.StartsWith("key:")) {
+                            // Never inject test keys into another application.
+                            if (GetForegroundWindow() == window.Handle) SendKeys.SendWait(action.Substring(4));
+                            else { Console.WriteLine("key skipped: fixture is not foreground"); Console.Out.Flush(); }
+                        }
                         if (action == "exit") window.Close();
                     }));
                 }

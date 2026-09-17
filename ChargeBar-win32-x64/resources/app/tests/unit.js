@@ -177,9 +177,9 @@ function harness(lock) {
   }
   const ipcMain = new EventEmitter(), hook = new EventEmitter(), bindings = new Map();
   hook.start = () => {}; hook.stop = () => { hook.stopped = true; };
-  const shortcuts = { blocked: '', unregisterAll: () => bindings.clear(),
+  const shortcuts = { blocked: '', resets: 0, unregisterAll: () => { shortcuts.resets++; bindings.clear(); },
     register: (key, callback) => { if (key === shortcuts.blocked) return false; bindings.set(key, callback); return true; } };
-  const electron = { app, BrowserWindow: Window, Tray, Menu: { buildFromTemplate: items => items },
+  const electron = { app, BrowserWindow: Window, Tray, Menu: { buildFromTemplate: items => { const events = new EventEmitter(); items.on = events.on.bind(events); items.emit = events.emit.bind(events); return items; } },
     globalShortcut: shortcuts, ipcMain };
   let clock = 1000, timerId = 0;
   const timers = new Map(), timerHistory = [];
@@ -263,7 +263,7 @@ test('main-process deadlines hide railgun without mouse events and cancel stale 
   const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
   h.monitors[0].emit('state', focus);
   h.trays[0].menu.find(item => item.label === '显示模式').submenu[2].click();
-  h.bindings.get('F3')(); assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
   h.hook.emit('mousedown', { button: 1 }); h.advance(2999);
   assert(h.windows[0].visible); h.advance(1);
   assert.strictEqual(h.windows[0].last.data.phase, 'complete');
@@ -277,7 +277,7 @@ test('main-process deadlines hide railgun without mouse events and cancel stale 
   h.monitors[0].emit('state', focus); assert(!h.windows[0].visible);
   h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); assert(h.windows[0].visible);
   const callbackBeforeSwitch = h.timerHistory[h.timerHistory.length - 1];
-  h.bindings.get('F3')(); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'epoch');
+  h.bindings.get('F3')(); h.advance(0); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'epoch');
   h.advance(2000); assert.strictEqual(h.windows[0].last.data.notice, null);
   h.app.quit(); assert.strictEqual(h.timers.size, 0);
 });
@@ -311,5 +311,34 @@ test('all weapons share the full-charge 500 ms hold and wait-for-next-click life
     assert(!model.snapshot(duration + 700).visible);
     model.mouse(1, true, duration + 800); assert(model.snapshot(duration + 800).visible);
   });
+});
+
+test('native callback defers and coalesces actions without rebuilding shortcuts', () => {
+  const h = harness(); const focus = { hasWindow: true, processName: 'helldivers2.exe' };
+  h.monitors[0].emit('state', focus); const resets = h.shortcuts.resets;
+  const callback = h.bindings.get('F3'); callback(); callback(); callback();
+  assert.strictEqual(h.api.status().config.weapon, 'epoch');
+  h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  assert.strictEqual(h.shortcuts.resets, resets);
+  h.bindings.get('F1')(); h.advance(0); assert.strictEqual(h.api.status().config.mode, 'always');
+  assert.strictEqual(h.shortcuts.resets, resets);
+  callback(); h.monitors[0].emit('state', { hasWindow: false }); h.monitors[0].emit('state', focus);
+  h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  h.bindings.get('F3')(); h.app.quit(); h.advance(0);
+  assert.strictEqual(h.api.status().config.weapon, 'railgun'); assert.strictEqual(h.timers.size, 0);
+});
+
+test('open tray defers replacement until close and settings changes invalidate queued actions', () => {
+  const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
+  const old = h.trays[0].menu; old.emit('menu-will-show');
+  old.find(item => item.label === '当前武器').submenu[1].click();
+  assert.strictEqual(h.trays[0].menu, old);
+  old.emit('menu-will-close'); assert.strictEqual(h.trays[0].menu, old);
+  h.advance(0); assert.notStrictEqual(h.trays[0].menu, old);
+  h.bindings.get('F3')(); h.api.openSettings();
+  const draft = state.defaults(); draft.weapon = 'railgun'; draft.hotkeys.weapon.accelerator = 'Ctrl+F9';
+  h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft); h.advance(0);
+  assert(!h.bindings.has('F3')); assert(h.bindings.has('Ctrl+F9'));
+  assert.strictEqual(h.api.status().config.weapon, 'railgun'); h.app.quit();
 });
 console.log('\n' + count + ' tests passed.');

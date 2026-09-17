@@ -19,6 +19,30 @@ let pendingSecondLaunch = false;
 let notifiedShortcutError = '';
 let transitionTimer = null;
 let transitionRevision = 0;
+let shortcutSignature = null;
+let shortcutRevision = 0;
+const pendingActions = new Map();
+let trayMenuOpen = false;
+let trayRefreshPending = false;
+let trayRefreshTimer = null;
+
+function cancelPendingActions() {
+  shortcutRevision++;
+  pendingActions.forEach(timer => clearTimeout(timer));
+  pendingActions.clear();
+}
+
+function queueShortcut(action) {
+  if (quitting || !charge.focused || pendingActions.has(action)) return;
+  const revision = shortcutRevision;
+  pendingActions.set(action, setTimeout(() => {
+    pendingActions.delete(action);
+    if (quitting || !charge.focused || revision !== shortcutRevision) return;
+    if (action === 'quit') app.quit();
+    else if (action === 'weapon') changeWeapon(WEAPON_IDS[(WEAPON_IDS.indexOf(config.weapon) + 1) % WEAPON_IDS.length]);
+    else changeMode(MODES[(MODES.indexOf(config.mode) + 1) % MODES.length]);
+  }, 0));
+}
 
 function notify(message) {
   if (!tray || quitting) return;
@@ -62,6 +86,8 @@ function publishOverlay() {
 
 function refreshTray() {
   if (!tray || quitting) return;
+  if (trayMenuOpen) { trayRefreshPending = true; sendSettings(); return; }
+  trayRefreshPending = false;
   const modeLabel = LABELS[MODES.indexOf(config.mode)];
   const menu = [
     { label: detection, enabled: false },
@@ -87,12 +113,32 @@ function refreshTray() {
   if (inputError) menu.push({ label: '鼠标监听异常：打开设置查看', click: openSettings });
   if (configWarning) menu.push({ label: '配置提示：打开设置查看', click: openSettings });
   menu.push({ label: '重新检测', click: restartDetection }, { type: 'separator' }, { label: '退出 HD2CB', click: () => app.quit() });
-  tray.setContextMenu(Menu.buildFromTemplate(menu));
+  const contextMenu = Menu.buildFromTemplate(menu);
+  contextMenu.on('menu-will-show', () => {
+    if (trayRefreshTimer !== null) clearTimeout(trayRefreshTimer);
+    trayRefreshTimer = null;
+    trayMenuOpen = true;
+  });
+  contextMenu.on('menu-will-close', () => {
+    // Keep the old menu alive until the native close/click callbacks have returned.
+    if (trayRefreshTimer === null) {
+      trayRefreshTimer = setTimeout(() => {
+        trayRefreshTimer = null;
+        trayMenuOpen = false;
+        if (trayRefreshPending) refreshTray();
+      }, 0);
+    }
+  });
+  tray.setContextMenu(contextMenu);
   tray.setToolTip('HD2CB · ' + WEAPONS[config.weapon].shortName + ' · ' + modeLabel + '\n' + detection);
   sendSettings();
 }
 
 function syncShortcuts() {
+  const signature = charge.focused ? JSON.stringify(config.hotkeys) : 'inactive';
+  if (signature === shortcutSignature) return;
+  shortcutSignature = signature;
+  cancelPendingActions();
   globalShortcut.unregisterAll();
   // Keep the last conflict visible when opening settings (which itself takes focus).
   if (!charge.focused) return;
@@ -104,19 +150,16 @@ function syncShortcuts() {
       let registered = false;
       try {
         registered = globalShortcut.register(item.accelerator, () => {
-          if (!charge.focused) return;
-          if (action === 'quit') app.quit();
-          else if (action === 'weapon') changeWeapon(WEAPON_IDS[(WEAPON_IDS.indexOf(config.weapon) + 1) % WEAPON_IDS.length]);
-          else changeMode(MODES[(MODES.indexOf(config.mode) + 1) % MODES.length]);
+          queueShortcut(action);
         });
       } catch (error) { /* Report unsupported/reserved accelerators like conflicts. */ }
       if (!registered) shortcutErrors.push(item.accelerator + ' 无法注册，可能已被其他程序占用。请更换快捷键。');
     });
   }
-  const signature = shortcutErrors.join('\n');
-  if (signature && signature !== notifiedShortcutError) {
-    notify(signature);
-    notifiedShortcutError = signature;
+  const errorSignature = shortcutErrors.join('\n');
+  if (errorSignature && errorSignature !== notifiedShortcutError) {
+    notify(errorSignature);
+    notifiedShortcutError = errorSignature;
   }
 }
 
@@ -126,10 +169,8 @@ function applyConfig(candidate) {
   catch (error) { throw new Error('设置保存失败，原设置未改变：' + error.message); }
   config = next;
   configWarning = null;
-  shortcutErrors = [];
   charge.setMode(config.mode);
   charge.setWeapon(config.weapon);
-  notifiedShortcutError = '';
   syncShortcuts();
   publishOverlay();
   refreshTray();
@@ -282,6 +323,8 @@ else {
   app.on('before-quit', () => {
     quitting = true;
     clearTransitionTimer();
+    cancelPendingActions();
+    if (trayRefreshTimer !== null) clearTimeout(trayRefreshTimer);
     if (monitor) monitor.stop();
     globalShortcut.unregisterAll();
     // iohook 0.9.2's Windows unload races its hook thread and crashes this build.
