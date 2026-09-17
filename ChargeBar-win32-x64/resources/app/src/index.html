@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>蓄力条</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden; /* 防止滚动条 */
+      display: flex;
+      justify-content: center;
+      align-items: flex-end;
+      transform: translateX(-50px);
+    }
+
+    #barContainer {
+      display: none;
+      position: fixed;
+      width: 10px;
+      height: 100px;
+      border: 1px solid white;
+      border-radius: 3px;
+      box-sizing: border-box; /* 边框计入尺寸 */
+      background: transparent;
+    }
+
+    #fill {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      height: 0%;
+      background-color: green;
+      border-radius: 3px 3px 0 0; /* 顶部圆角 */
+      box-sizing: border-box;
+    }
+
+    .marker {
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background-color: red;
+      left: 0;
+    }
+
+    #marker1 { bottom: 66.7%; } /* 2秒 */
+    #marker2 { bottom: 83.3%; } /* 2.5秒 */
+  </style>
+</head>
+<body>
+  <div id="barContainer">
+    <div id="fill"></div>
+    <div class="marker" id="marker1"></div>
+    <div class="marker" id="marker2"></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

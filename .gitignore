@@ -1,0 +1,28 @@
+# Local tools, validation runs, release staging and reference applications
+/.tools/
+/.qa/
+/release/
+/GRWCNChat/
+/*.rar
+
+# Keep the existing runnable folder, but version only its application sources.
+/ChargeBar-win32-x64/*
+!/ChargeBar-win32-x64/resources/
+/ChargeBar-win32-x64/resources/*
+!/ChargeBar-win32-x64/resources/app/
+
+**/node_modules/
+**/dist/
+**/*.exe
+**/*.dll
+**/*.node
+**/*.pdb
+**/*.log
+**/*.tmp
+**/settings.json
+**/userData/
+**/.env
+**/.env.*
+**/npm-debug.log*
+**/.DS_Store
+**/Thumbs.db

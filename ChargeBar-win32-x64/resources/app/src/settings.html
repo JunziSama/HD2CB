@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>HD2CB 设置</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px 30px; background: #101820; color: #e7edf2; font: 14px 'Microsoft YaHei', sans-serif; }
+    header { border-left: 4px solid #f1d44d; padding-left: 14px; margin-bottom: 22px; }
+    h1 { margin: 0 0 6px; font-size: 23px; letter-spacing: 1px; }
+    p { color: #acbac7; line-height: 1.65; margin: 6px 0; }
+    #status { color: #f1d44d; }
+    .card { background: #1b2732; border: 1px solid #344351; border-radius: 8px; padding: 16px; margin: 14px 0; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    input[type=checkbox] { accent-color: #f1d44d; margin: 0 9px 0 0; width: 16px; height: 16px; vertical-align: middle; }
+    input[type=text] { width: 215px; padding: 9px 10px; border: 1px solid #667786; border-radius: 4px; color: #f4f7fa; background: #101820; font-size: 14px; }
+    input:focus { outline: 2px solid #f1d44d; outline-offset: 2px; }
+    .hint { font-size: 12px; margin-top: 10px; }
+    #errors { white-space: pre-wrap; color: #ffb4a9; font-size: 12px; max-height: 66px; overflow: auto; }
+    #message { min-height: 38px; font-size: 13px; color: #a9dec2; }
+    footer { display: flex; justify-content: space-between; margin-top: 14px; }
+    button { border: 1px solid #596d7d; background: #263746; color: #edf3f7; padding: 9px 16px; border-radius: 5px; cursor: pointer; font: inherit; }
+    button:focus { outline: 2px solid #f1d44d; }
+    button.primary { background: #f1d44d; color: #151b20; border-color: #f1d44d; font-weight: bold; margin-left: 8px; }
+    #retry { border: 0; background: none; color: #d3dfe8; padding: 0; font-size: 12px; text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <header><h1>HD2CB · 热键设置</h1><p>仅在《绝地潜兵 2》处于前台时生效</p></header>
+  <div class="row"><span id="status">正在读取状态…</span><button id="retry">重新检测</button></div>
+  <div class="card">
+    <div class="row"><label><input id="toggle-enabled" type="checkbox">切换显示模式</label>
+      <input id="toggle-key" type="text" aria-label="切换显示模式快捷键" maxlength="80" autocomplete="off" spellcheck="false"></div>
+    <p class="hint">隐藏 → 按住右键显示 → 游戏内常显</p>
+  </div>
+  <div class="card">
+    <div class="row"><label><input id="quit-enabled" type="checkbox">退出程序</label>
+      <input id="quit-key" type="text" aria-label="退出程序快捷键" maxlength="80" autocomplete="off" spellcheck="false"></div>
+    <p class="hint">关闭此热键后，仍可通过托盘菜单退出。</p>
+  </div>
+  <p class="hint">点击输入框后按下组合键，或直接输入 Ctrl+Shift+F1。<br>支持 F1–F24，或 Ctrl / Alt / Shift 搭配字母、数字及常用按键。</p>
+  <p id="errors" role="alert"></p>
+  <p id="message" role="status">关闭此窗口后，HD2CB 会继续在托盘运行。</p>
+  <footer><button id="defaults">恢复默认</button><div><button id="cancel">取消</button><button id="save" class="primary">保存设置</button></div></footer>
+  <script src="settings.js"></script>
+</body>
+</html>
