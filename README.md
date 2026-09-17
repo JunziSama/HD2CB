@@ -1,12 +1,12 @@
 # HD2CB
 
-《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。最新发布版本：**1.1.0**（main 已增加下述武器切换功能，尚未发布新运行包），适用于 Windows x64。
+《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。最新发布版本：**1.2.0**，适用于 Windows x64。
 
 本项目保留原作者版权及 ISC 许可证，新增托盘管理、单实例运行、前台窗口识别和可配置热键。前台判定参考 [GRW-CNChat](https://github.com/GameXueRen/GRW-CNChat) 的思路，使用独立编写的 Windows API 检测助手，未复制其 AutoHotkey 代码。
 
 ## 下载与运行
 
-从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.1.0-win32-x64.zip`，完整解压后运行 `ChargeBar-win32-x64/ChargeBar.exe`。不要单独移动 EXE。
+从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.2.0-win32-x64.zip`，完整解压后运行 `ChargeBar-win32-x64/ChargeBar.exe`。不要单独移动 EXE。
 
 GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖或已编译助手，不能直接双击运行。
 

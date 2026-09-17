@@ -1,6 +1,6 @@
 # HD2 ChargeBar
 
-最新发布版本：**1.1.0**；本文包含 main 分支尚未发布的武器切换功能。仓库：[JunziSama/HD2CB](https://github.com/JunziSama/HD2CB)。
+最新发布版本：**1.2.0**。仓库：[JunziSama/HD2CB](https://github.com/JunziSama/HD2CB)。
 
 ## 安装
 
