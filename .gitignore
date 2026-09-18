@@ -26,3 +26,8 @@
 **/npm-debug.log*
 **/.DS_Store
 **/Thumbs.db
+
+# Versioned deliverables and local runtime template
+/.runtime/
+/Releases/
+/ChargeBar-win32-x64/

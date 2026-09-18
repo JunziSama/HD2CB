@@ -1,12 +1,12 @@
 # HD2CB
 
-《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。最新发布版本：**1.2.0**（main 新增七武器支持及累计热量提示，尚未发布新运行包），适用于 Windows x64。
+《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。当前本地版本：**1.3.0**；GitHub 最新发布版本仍为 **1.2.0**，适用于 Windows x64。
 
 本项目保留原作者版权及 ISC 许可证，新增托盘管理、单实例运行、前台窗口识别和可配置热键。前台判定参考 [GRW-CNChat](https://github.com/GameXueRen/GRW-CNChat) 的思路，使用独立编写的 Windows API 检测助手，未复制其 AutoHotkey 代码。
 
 ## 下载与运行
 
-从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.2.0-win32-x64.zip`，完整解压后运行 `ChargeBar-win32-x64/ChargeBar.exe`。不要单独移动 EXE。
+从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.2.0-win32-x64.zip`，完整解压后运行包内的 `ChargeBar.exe`。不要单独移动 EXE。
 
 GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖或已编译助手，不能直接双击运行。
 
@@ -15,7 +15,7 @@ GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖
 - 启动通知与常驻托盘；重复启动会提示已有实例。
 - 隐藏、按住右键显示、游戏内常显三种模式；首次默认按住右键显示。
 - 仅 HD2 位于前台时显示；切出后隐藏并清空按住状态；双刃镰刀保留余热并继续估算冷却。
-- 默认 F1 切换模式、F2 退出、F3 切换武器，仅游戏前台生效；可分别开关、修改快捷键。
+- 默认 F1 切换模式、F2 切换武器、F3 退出，仅游戏前台生效；可分别开关、修改快捷键。
 - 自动记住武器选择、显示模式和热键设置。关闭设置窗口后继续驻留托盘。
 - 支持 PLAS-45 纪元、RS-422 磁轨炮（不安全模式）及 LAS-99 类星体加农炮，分别显示对应颜色和刻度。
 - main 另支持电弧发射器、净化者、忠诚者：绿色蓄力，满格青色保持到松手。
@@ -24,16 +24,16 @@ GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖
 
 本工具显示鼠标长按时间，不读取游戏实际武器充能状态。建议使用窗口化或无边框游戏模式。
 
-详见 [使用及开发说明](ChargeBar-win32-x64/resources/app/README.md) 和 [验证记录](ChargeBar-win32-x64/resources/app/VALIDATION.md)。
+详见 [使用及开发说明](app/README.md) 和 [验证记录](app/VALIDATION.md)。
 
 ## 源码与测试
 
-源码保留在 `ChargeBar-win32-x64/resources/app`：`src` 为 Electron 应用，`native` 为检测助手及构建脚本，`tests` 为自动化测试。运行依赖与二进制通过 Releases 提供，不纳入 Git。
+源码保留在 `app`：`src` 为 Electron 应用，`native` 为检测助手及构建脚本，`tests` 为自动化测试。运行依赖与二进制通过 Releases 提供，不纳入 Git。
 
 在 Windows 上安装 Node.js 后，可执行不依赖 Electron 安装的状态及助手测试：
 
 ```powershell
-cd ChargeBar-win32-x64/resources/app
+cd app
 powershell -NoProfile -ExecutionPolicy Bypass -File native/build.ps1
 npm test
 ```

@@ -3,8 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 const childProcess = require('child_process');
-const distribution = path.resolve(__dirname, '../../..');
-const root = path.resolve(distribution, '..', '.qa');
+const distribution = process.env.HD2CB_RUNTIME || path.resolve(__dirname, '../../.runtime');
+const root = path.resolve(__dirname, '../../.qa');
 const runtime = path.join(root, 'runtime');
 const output = path.join(root, 'run-' + Date.now());
 fs.mkdirSync(path.join(runtime, 'resources', 'app'), { recursive: true });

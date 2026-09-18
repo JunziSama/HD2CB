@@ -3,7 +3,7 @@
 ## 项目位置
 
 - Git 根目录为本文件所在目录，默认分支为 `main`，远端为 `https://github.com/JunziSama/HD2CB.git`。
-- 应用源码位于 `ChargeBar-win32-x64/resources/app`，Windows 程序启动位置保持 `ChargeBar-win32-x64/ChargeBar.exe`。
+- 应用源码位于 `app`，Windows 程序启动位置保持 `Releases/HD2CB-v1.3.0-win32-x64/ChargeBar.exe`。
 - 保持 Electron 4.2.12 / Node 10.11 兼容性；未经明确任务要求不升级运行时。
 - 保留原作者版权、ISC 许可证和上游来源说明。
 
@@ -25,3 +25,7 @@
 - 不上传依赖目录、Electron 运行时、测试缓存、个人配置、凭据、参考工具及原压缩包到 Git。
 - 可运行 Windows ZIP 通过 GitHub Releases 发布，包含完整运行所需文件、许可证与 SHA-256 校验文件。
 - 没有真实游戏运行验证时，不得声称已经通过真实 HD2 内测试。
+
+## 版本与交付目录
+
+每次完成应用更新均更新版本：新增功能递增次版本，修复及布局递增修订版本，同一任务仅递增一次。应用清单和锁文件同步更新；源码固定在 app/，运行时模板在忽略的 .runtime/。使用 scripts/build-runtime.ps1 生成 Releases/HD2CB-v<版本>-win32-x64，禁止覆盖已有版本。版本目录和 ZIP 不纳入 Git，发布 Release 仍需明确请求。

@@ -3,7 +3,7 @@ const { heatDefaults, validateHeat, HeatState } = require('./heat');
 
 const MODES = ['hidden', 'right-mouse', 'always'];
 const LABELS = ['隐藏', '按住右键显示', '游戏内常显'];
-const ACTIONS = ['toggle', 'quit', 'weapon'];
+const ACTIONS = ['toggle', 'weapon', 'quit'];
 const WEAPON_IDS = ['epoch', 'railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'double-edge'];
 const WEAPONS = {
   'double-edge': { name: 'LAS-17 双刃镰刀', shortName: '双刃镰刀', duration: 100, completion: 'heat',
@@ -26,10 +26,10 @@ const WEAPONS = {
 };
 
 function defaults() {
-  return { version: 3, heat: heatDefaults(), mode: 'right-mouse', weapon: 'epoch', hotkeys: {
+  return { version: 4, showHeatText: true, heat: heatDefaults(), mode: 'right-mouse', weapon: 'epoch', hotkeys: {
     toggle: { enabled: true, accelerator: 'F1' },
-    quit: { enabled: true, accelerator: 'F2' },
-    weapon: { enabled: true, accelerator: 'F3' }
+    weapon: { enabled: true, accelerator: 'F2' },
+    quit: { enabled: true, accelerator: 'F3' }
   } };
 }
 
@@ -59,13 +59,13 @@ function normalizeAccelerator(value) {
 }
 
 function validateConfig(value) {
-  if (!value || [1, 2, 3].indexOf(value.version) === -1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
+  if (!value || [1, 2, 3, 4].indexOf(value.version) === -1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
     throw new Error('配置格式或显示模式无效。');
   }
   const legacy = value.version === 1;
   const weapon = legacy ? 'epoch' : value.weapon;
   if (WEAPON_IDS.indexOf(weapon) === -1) throw new Error('武器选择无效。');
-  const result = { version: 3, mode: value.mode, weapon: weapon, hotkeys: {} };
+  const result = { version: 4, mode: value.mode, weapon: weapon, hotkeys: {} };
   const used = [];
   (legacy ? ['toggle', 'quit'] : ACTIONS).forEach(action => {
     const item = value.hotkeys[action];
@@ -80,6 +80,11 @@ function validateConfig(value) {
     while (used.indexOf('F' + key) !== -1) key++;
     result.hotkeys.weapon = { enabled: true, accelerator: 'F' + key };
   }
+  if (value.version < 4 && result.hotkeys.toggle.accelerator === 'F1' && result.hotkeys.quit.accelerator === 'F2' && result.hotkeys.weapon.accelerator === 'F3') {
+    result.hotkeys.quit.accelerator = 'F3'; result.hotkeys.weapon.accelerator = 'F2';
+  }
+  result.showHeatText = value.version < 4 ? true : value.showHeatText;
+  if (typeof result.showHeatText !== 'boolean') throw new Error('热量文字开关无效。');
   result.heat = validateHeat(value.version < 3 ? heatDefaults() : value.heat, result.hotkeys);
   return result;
 }

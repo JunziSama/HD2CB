@@ -31,7 +31,7 @@ function render() {
   notice.style.display = state.visible && state.notice ? 'block' : 'none';
   const elapsed = state.elapsed + (state.charging ? performance.now() - receivedAt : 0);
   const isHeat = state.weapon === 'double-edge';
-  heatLabel.style.display = state.visible && isHeat ? 'block' : 'none';
+  heatLabel.style.display = state.visible && isHeat && state.showHeatText !== false ? 'block' : 'none';
   heatLabel.textContent = isHeat ? '估算热量 ' + Math.round(state.heat || 0) + '%' : '';
   const style = isHeat ? heatStyle(state.heat || 0) : chargeStyle(elapsed, state.weapon);
   fill.style.height = style.percent + '%';

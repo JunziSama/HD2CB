@@ -1,8 +1,10 @@
 'use strict';
 const { ipcRenderer } = require('electron');
-const { defaults, ACTIONS, WEAPONS, WEAPON_IDS } = require('./state');
+const { defaults, MODES, LABELS, ACTIONS, WEAPONS, WEAPON_IDS } = require('./state');
 const { PRESETS, normalizeMonitorKey } = require('./heat');
 const byId = id => document.getElementById(id);
+byId('app-version').textContent = 'v' + require('../package.json').version;
+MODES.forEach((mode, index) => { const option = document.createElement('option'); option.value = mode; option.textContent = LABELS[index]; byId('mode-select').appendChild(option); });
 WEAPON_IDS.forEach(weapon => {
   const option = document.createElement('option');
   option.value = weapon; option.textContent = WEAPONS[weapon].name;
@@ -29,6 +31,8 @@ function fill(config, force) {
     byId('heat-monitor-enabled').checked = config.heat.monitor.enabled;
     byId('heat-monitor-key').value = config.heat.monitor.key;
   }
+  if (force || !dirty.mode) byId('mode-select').value = config.mode;
+  if (force || !dirty.text) byId('heat-text-enabled').checked = config.showHeatText;
   describeWeapon();
 }
 function message(text, error) {
@@ -76,12 +80,14 @@ byId('save').addEventListener('click', () => {
   });
   const heat = { preset: byId('heat-preset').value, monitor: { enabled: byId('heat-monitor-enabled').checked, key: byId('heat-monitor-key').value } };
   ['warmup', 'heating', 'cooling'].forEach(key => { const value = byId('heat-' + key).value.trim(); heat[key] = value === '' ? null : Number(value); });
-  ipcRenderer.send('settings-save', { weapon: byId('weapon-select').value, hotkeys: hotkeys, heat: heat });
+  ipcRenderer.send('settings-save', { mode: dirty.mode ? byId('mode-select').value : undefined, showHeatText: byId('heat-text-enabled').checked, weapon: byId('weapon-select').value, hotkeys: hotkeys, heat: heat });
 });
 byId('defaults').addEventListener('click', () => {
-  fill(defaults(), true); dirty = { selection: true, toggle: true, quit: true, weapon: true, heat: true };
-  message('已填入默认武器与热键，请点击“保存设置”应用。', false);
+  fill(defaults(), true); dirty = { mode: true, text: true, selection: true, toggle: true, quit: true, weapon: true, heat: true };
+  message('已填入默认显示模式、武器与热键，请点击“保存设置”应用。', false);
 });
+byId('mode-select').addEventListener('change', () => { dirty.mode = true; });
+byId('heat-text-enabled').addEventListener('change', () => { dirty.text = true; });
 let recording = false;
 byId('heat-record').addEventListener('click', () => { recording = true; byId('heat-record').textContent = '请按一个键（Esc 取消）'; });
 document.addEventListener('keydown', event => {

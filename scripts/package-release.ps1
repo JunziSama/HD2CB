@@ -1,9 +1,9 @@
 param([string]$OutputDirectory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$sourceDirectory = Join-Path $projectRoot 'ChargeBar-win32-x64'
-$manifest = Get-Content -LiteralPath (Join-Path $sourceDirectory 'resources/app/package.json') -Raw | ConvertFrom-Json
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'release' }
+$manifest = Get-Content -LiteralPath (Join-Path $projectRoot 'app/package.json') -Raw | ConvertFrom-Json
+$sourceDirectory = Join-Path $projectRoot "Releases/HD2CB-v$($manifest.version)-win32-x64"
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'Releases' }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $zipName = "HD2CB-v$($manifest.version)-win32-x64.zip"

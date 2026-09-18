@@ -22,7 +22,7 @@ test('reject duplicate hotkeys, invalid modes and invalid switch types', () => {
   const config = state.defaults(); config.hotkeys.quit.accelerator = 'f1';
   assert.throws(() => state.validateConfig(config));
   assert.throws(() => state.validateConfig(Object.assign(state.defaults(), { mode: 'bad' })));
-  config.hotkeys.quit.accelerator = 'F2'; config.hotkeys.quit.enabled = 'yes';
+  config.hotkeys.quit.accelerator = 'F3'; config.hotkeys.quit.enabled = 'yes';
   assert.throws(() => state.validateConfig(config));
 });
 test('process takes priority; exact title only falls back when process unavailable', () => {
@@ -72,13 +72,13 @@ test('weapon colors, caps and markers match researched thresholds', () => {
 test('legacy migration preserves settings and chooses an unused weapon shortcut', () => {
   const old = { version: 1, mode: 'always', hotkeys: { toggle: { enabled: false, accelerator: 'f3' }, quit: { enabled: true, accelerator: 'F4' } } };
   const migrated = state.validateConfig(old);
-  assert.strictEqual(migrated.version, 3); assert.strictEqual(migrated.weapon, 'epoch');
+  assert.strictEqual(migrated.version, 4); assert.strictEqual(migrated.weapon, 'epoch');
   assert.strictEqual(migrated.mode, 'always'); assert.strictEqual(migrated.hotkeys.toggle.enabled, false);
   assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
   assert.strictEqual(old.version, 1);
   const filename = path.join(temp, 'legacy.json'); fs.writeFileSync(filename, JSON.stringify(old));
   assert(configIO.readConfig(filename).migrated); assert.strictEqual(configIO.readConfig(filename).warning, null);
-  const duplicate = state.defaults(); duplicate.hotkeys.weapon.accelerator = 'F2';
+  const duplicate = state.defaults(); duplicate.hotkeys.weapon.accelerator = 'F3';
   assert.throws(() => state.validateConfig(duplicate));
   assert.throws(() => state.validateConfig(Object.assign(state.defaults(), { weapon: 'unknown' })));
 });
@@ -237,7 +237,7 @@ test('tray mode, independent switches, conflict survives focus loss and helper f
   assert.strictEqual(h.api.status().shortcutErrors.length, 1);
   h.shortcuts.blocked = ''; h.monitors[0].emit('state', focus);
   h.trays[0].menu[1].submenu[2].click(); assert(h.windows[0].visible);
-  h.trays[0].menu.find(item => item.label && item.label.indexOf('启用切换模式') === 0).click(); assert(!h.bindings.has('F1')); assert(h.bindings.has('F2'));
+  h.trays[0].menu.find(item => item.label && item.label.indexOf('启用切换模式') === 0).click(); assert(!h.bindings.has('F1')); assert(h.bindings.has('F3'));
   h.monitors[0].emit('failure', 'timeout'); assert(!h.windows[0].visible); assert.strictEqual(h.bindings.size, 0);
   assert.strictEqual(h.api.status().detectorError, 'timeout');
   h.api.restartDetection(); assert.strictEqual(h.api.status().detectorError, null);
@@ -263,7 +263,7 @@ test('main-process deadlines hide railgun without mouse events and cancel stale 
   const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
   h.monitors[0].emit('state', focus);
   h.trays[0].menu.find(item => item.label === '显示模式').submenu[2].click();
-  h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
+  h.bindings.get('F2')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
   h.hook.emit('mousedown', { button: 1 }); h.advance(2999);
   assert(h.windows[0].visible); h.advance(1);
   assert.strictEqual(h.windows[0].last.data.phase, 'complete');
@@ -277,7 +277,7 @@ test('main-process deadlines hide railgun without mouse events and cancel stale 
   h.monitors[0].emit('state', focus); assert(!h.windows[0].visible);
   h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); assert(h.windows[0].visible);
   const callbackBeforeSwitch = h.timerHistory[h.timerHistory.length - 1];
-  h.bindings.get('F3')(); h.advance(0); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'quasar');
+  h.bindings.get('F2')(); h.advance(0); callbackBeforeSwitch(); assert.strictEqual(h.windows[0].last.data.weapon, 'quasar');
   h.advance(2000); assert.strictEqual(h.windows[0].last.data.notice, null);
   h.app.quit(); assert.strictEqual(h.timers.size, 0);
 });
@@ -286,7 +286,7 @@ test('third shortcut can be disabled and saving failure preserves selected weapo
   const focus = { hasWindow: true, minimized: false, error: null, title: '', processName: 'helldivers2.exe' };
   h.monitors[0].emit('state', focus);
   h.trays[0].menu.find(item => item.label && item.label.indexOf('启用切换武器') === 0).click();
-  assert(!h.bindings.has('F3')); assert(h.bindings.has('F1')); assert(h.bindings.has('F2'));
+  assert(!h.bindings.has('F2')); assert(h.bindings.has('F1')); assert(h.bindings.has('F3'));
   h.api.openSettings();
   const draft = state.defaults(); draft.weapon = 'railgun'; draft.hotkeys.weapon.accelerator = 'Ctrl+F9';
   h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft);
@@ -316,7 +316,7 @@ test('timed weapons share the full-charge 500 ms hold and wait-for-next-click li
 test('native callback defers and coalesces actions without rebuilding shortcuts', () => {
   const h = harness(); const focus = { hasWindow: true, processName: 'helldivers2.exe' };
   h.monitors[0].emit('state', focus); const resets = h.shortcuts.resets;
-  const callback = h.bindings.get('F3'); callback(); callback(); callback();
+  const callback = h.bindings.get('F2'); callback(); callback(); callback();
   assert.strictEqual(h.api.status().config.weapon, 'epoch');
   h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
   assert.strictEqual(h.shortcuts.resets, resets);
@@ -324,7 +324,7 @@ test('native callback defers and coalesces actions without rebuilding shortcuts'
   assert.strictEqual(h.shortcuts.resets, resets);
   callback(); h.monitors[0].emit('state', { hasWindow: false }); h.monitors[0].emit('state', focus);
   h.advance(0); assert.strictEqual(h.api.status().config.weapon, 'railgun');
-  h.bindings.get('F3')(); h.app.quit(); h.advance(0);
+  h.bindings.get('F2')(); h.app.quit(); h.advance(0);
   assert.strictEqual(h.api.status().config.weapon, 'railgun'); assert.strictEqual(h.timers.size, 0);
 });
 
@@ -335,10 +335,10 @@ test('open tray defers replacement until close and settings changes invalidate q
   assert.strictEqual(h.trays[0].menu, old);
   old.emit('menu-will-close'); assert.strictEqual(h.trays[0].menu, old);
   h.advance(0); assert.notStrictEqual(h.trays[0].menu, old);
-  h.bindings.get('F3')(); h.api.openSettings();
+  h.bindings.get('F2')(); h.api.openSettings();
   const draft = state.defaults(); draft.weapon = 'railgun'; draft.hotkeys.weapon.accelerator = 'Ctrl+F9';
   h.ipcMain.emit('settings-save', { sender: h.windows[1].webContents }, draft); h.advance(0);
-  assert(!h.bindings.has('F3')); assert(h.bindings.has('Ctrl+F9'));
+  assert(!h.bindings.has('F2')); assert(h.bindings.has('Ctrl+F9'));
   assert.strictEqual(h.api.status().config.weapon, 'railgun'); h.app.quit();
 });
 
@@ -360,7 +360,7 @@ test('seven-weapon shortcut cycle preserves native registrations and cancels qua
   const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
   const resets = h.shortcuts.resets;
   ['railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'double-edge', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
-    h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, weapon);
+    h.bindings.get('F2')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, weapon);
   });
   assert.strictEqual(h.shortcuts.resets, resets);
   h.hook.emit('mousedown', { button: 2 }); h.hook.emit('mousedown', { button: 1 });
@@ -397,7 +397,7 @@ test('switching between timed and release weapons cancels old completion callbac
   h.trays[0].menu.find(x => x.label === '当前武器').submenu[2].click();
   h.hook.emit('mousedown', { button: 2 }); h.hook.emit('mousedown', { button: 1 }); h.advance(3000);
   const old = h.timerHistory[h.timerHistory.length - 1];
-  h.bindings.get('F3')(); h.advance(0);
+  h.bindings.get('F2')(); h.advance(0);
   h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); h.advance(1000);
   old(); h.advance(10000); assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'complete');
   h.trays[0].menu.find(x => x.label === '当前武器').submenu[0].click();
@@ -418,7 +418,7 @@ test('heat warmup short taps accumulation cooling and saturation use elapsed tim
 test('heat colors and v1/v2 migration validation cover boundaries conflicts and corrupt values', () => {
   [[0,'green'],[25.99,'green'],[26,'yellow'],[50.99,'yellow'],[51,'orange'],[90.99,'orange'],[91,'red'],[100,'red']].forEach(x => assert.strictEqual(heatModule.heatStyle(x[0]).color,x[1]));
   const old = state.defaults(); old.version=2; old.weapon='loyalist'; delete old.heat;
-  const migrated=state.validateConfig(old); assert.strictEqual(migrated.version,3); assert.strictEqual(migrated.weapon,'loyalist'); assert.strictEqual(migrated.heat.monitor.key,'R');
+  const migrated=state.validateConfig(old); assert.strictEqual(migrated.version,4); assert.strictEqual(migrated.weapon,'loyalist'); assert.strictEqual(migrated.heat.monitor.key,'R');
   ['warmup','heating','cooling'].forEach(key => [null,'',NaN,Infinity,-1,101].forEach(value => { const c=state.defaults(); c.heat[key]=value; assert.throws(()=>state.validateConfig(c)); }));
   const c=state.defaults(); c.heat.monitor.key='F1'; assert.throws(()=>state.validateConfig(c)); c.heat.monitor.key='Ctrl+R'; assert.throws(()=>state.validateConfig(c));
   ['R','7','F24'].forEach(key=>assert.strictEqual(heatModule.normalizeMonitorKey(key),key));
@@ -465,4 +465,18 @@ test('heat saving failure leaves parameters intact and runtime heat is never per
   assert.strictEqual(h.windows[1].last.data.ok,false); assert.strictEqual(JSON.stringify(h.api.status().config),before);
   assert.strictEqual(new heatModule.HeatState().value,0); h.app.quit();
 });
+
+test('v4 migration only swaps legacy defaults and preserves independent switches', () => {
+ const old=state.defaults();old.version=3;delete old.showHeatText;old.hotkeys.quit={enabled:false,accelerator:'F2'};old.hotkeys.weapon={enabled:true,accelerator:'F3'};
+ const next=state.validateConfig(old);assert.strictEqual(next.hotkeys.quit.accelerator,'F3');assert.strictEqual(next.hotkeys.quit.enabled,false);assert.strictEqual(next.hotkeys.weapon.accelerator,'F2');assert(next.showHeatText);
+ old.hotkeys.toggle.accelerator='Ctrl+F8';const custom=state.validateConfig(old);assert.strictEqual(custom.hotkeys.quit.accelerator,'F2');assert.strictEqual(custom.hotkeys.weapon.accelerator,'F3');
+ next.showHeatText=false;assert.deepStrictEqual(state.validateConfig(next),next);next.showHeatText='false';assert.throws(()=>state.validateConfig(next));
+});
+test('text-only settings preserve live heat and mode changes are validated', () => {
+ const h=harness();h.monitors[0].emit('state',{hasWindow:true,processName:'helldivers2.exe'});h.trays[0].menu.find(x=>x.label==='当前武器').submenu[6].click();h.hook.emit('mousedown',{button:1});h.advance(1000);h.api.openSettings();
+ const draft=JSON.parse(JSON.stringify(h.api.status().config));draft.showHeatText=false;draft.mode='always';h.ipcMain.emit('settings-save',{sender:h.windows[1].webContents},draft);
+ assert.strictEqual(h.api.status().config.showHeatText,false);assert.strictEqual(h.windows[0].last.data.showHeatText,false);const heat=h.windows[0].last.data.heat;h.advance(1000);assert(h.windows[0].last.data.heat>heat);
+ draft.mode='invalid';h.ipcMain.emit('settings-save',{sender:h.windows[1].webContents},draft);assert.strictEqual(h.windows[1].last.data.ok,false);assert.strictEqual(h.api.status().config.mode,'always');h.app.quit();
+});
+test('default F3 exits only after deferred callback and focus enables registration', () => { const h=harness();assert(!h.bindings.has('F3'));h.monitors[0].emit('state',{hasWindow:true,processName:'helldivers2.exe'});h.bindings.get('F3')();assert(!h.trays[0].destroyed);h.advance(0);assert(h.trays[0].destroyed); });
 console.log('\n' + count + ' tests passed.');

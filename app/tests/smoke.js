@@ -84,13 +84,13 @@ if (!secondary) {
         finish(); return;
       }
       if (phase === 'legacy') {
-        assert.strictEqual(api.status().config.version, 3);
+        assert.strictEqual(api.status().config.version, 4);
         assert.strictEqual(api.status().config.weapon, 'epoch');
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'F3');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
         assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'F5');
         const migrated = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
-        assert.strictEqual(migrated.version, 3); assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
+        assert.strictEqual(migrated.version, 4); assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
         pass('Legacy settings migrate on startup without losing mode or shortcuts; occupied F3/F4 selects F5');
         finish(); return;
       }
@@ -104,7 +104,7 @@ if (!secondary) {
       assert.strictEqual(api.status().config.mode, 'right-mouse');
       const overlay = BrowserWindow.getAllWindows()[0];
       assert(!overlay.isVisible());
-      assert(!globalShortcut.isRegistered('F1')); assert(!globalShortcut.isRegistered('F2')); assert(!globalShortcut.isRegistered('F3'));
+      assert(!globalShortcut.isRegistered('F1')); assert(!globalShortcut.isRegistered('F3')); assert(!globalShortcut.isRegistered('F2'));
       pass('Actual Electron 4 startup, native iohook and focus helper load successfully; overlay and hotkeys inactive outside HD2');
       assert(balloons.some(item => item.content.indexOf('已启动') !== -1));
       assert(menu.items.some(item => item.label === '显示模式'));
@@ -130,7 +130,7 @@ if (!secondary) {
       game.stderr.on('data', data => fs.appendFileSync(path.join(output, 'fixture.log'), data));
       game.stdin.on('error', () => {});
       await until(() => api.status().focused, 'test fixture foreground');
-      assert(globalShortcut.isRegistered('F1')); assert(globalShortcut.isRegistered('F2'));
+      assert(globalShortcut.isRegistered('F1')); assert(globalShortcut.isRegistered('F3'));
       async function pressWeapon(key) {
         const before = api.status().config.weapon;
         const ids = require('../src/state').WEAPON_IDS;
@@ -138,8 +138,8 @@ if (!secondary) {
         game.stdin.write('key:' + key + '\n');
         await until(() => api.status().config.weapon === expected, 'native weapon shortcut ' + key);
       }
-      await pressWeapon('{F3}');
-      for (let i = 0; i < 8; i++) await pressWeapon('{F3}');
+      await pressWeapon('{F2}');
+      for (let i = 0; i < 8; i++) await pressWeapon('{F2}');
       pass('Real Windows F3 dispatch switches weapon repeatedly and main loop remains responsive');
       const modeBefore = api.status().config.mode;
       game.stdin.write('key:{F1}\n');
@@ -150,7 +150,7 @@ if (!secondary) {
       custom.hotkeys.weapon.accelerator = 'Ctrl+Shift+F9';
       electron.ipcMain.emit('settings-save', { sender: launcher.webContents }, custom);
       await pressWeapon('^+{F9}');
-      custom.hotkeys.weapon.accelerator = 'F3';
+      custom.hotkeys.weapon.accelerator = 'F2';
       electron.ipcMain.emit('settings-save', { sender: launcher.webContents }, custom);
       pass('Native F1 and custom Ctrl+Shift+F9 work after repeated F3 switches');
       assert(!overlay.isVisible());
@@ -213,9 +213,9 @@ if (!secondary) {
       api.openSettings();
       await until(() => BrowserWindow.getAllWindows().some(win => win !== overlay && win.isVisible()), 'settings window');
       const settings = BrowserWindow.getAllWindows().filter(win => win !== overlay)[0];
-      const ui = await settings.webContents.executeJavaScript('({ status: document.getElementById("status").textContent, key: document.getElementById("toggle-key").value, fits: document.documentElement.scrollHeight <= window.innerHeight })');
+      const ui = await settings.webContents.executeJavaScript('({ status: document.getElementById("status").textContent, key: document.getElementById("toggle-key").value, fits: document.documentElement.scrollWidth <= window.innerWidth && getComputedStyle(document.body).overflowY === "auto" })');
       assert.strictEqual(ui.key, 'F1');
-      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-key").value'), 'F3');
+      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-key").value'), 'F2');
 
       assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-select").options.length'), 7);
       await delay(150);
@@ -223,18 +223,18 @@ if (!secondary) {
         fs.writeFileSync(path.join(output, 'settings.png'), image.toPNG()); resolve();
       }));
       assert(ui.fits, 'Settings must fit without vertical clipping');
-      pass('Chinese settings window loads without overflow; screenshot captured');
+      pass('Chinese settings window scrolls without horizontal overflow; screenshot captured');
       const save = (weapon, hotkeys) => settings.webContents.executeJavaScript(
         'new Promise(resolve => { const ipc = require("electron").ipcRenderer; ipc.once("settings-result", (event, result) => resolve(result)); ' +
         'const draft = ' + JSON.stringify({ weapon, hotkeys }) + '; const select = document.getElementById("weapon-select"); select.value = draft.weapon; select.dispatchEvent(new Event("change")); ' +
         'Object.keys(draft.hotkeys).forEach(action => { const key = document.getElementById(action + "-key"); key.value = draft.hotkeys[action].accelerator; key.dispatchEvent(new Event("input")); const enabled = document.getElementById(action + "-enabled"); enabled.checked = draft.hotkeys[action].enabled; enabled.dispatchEvent(new Event("change")); }); document.getElementById("save").click(); })');
-      let result = await save('double-edge', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
+      let result = await save('double-edge', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F3' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
       assert(result.ok, result.message);
       const saved = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
       assert.strictEqual(saved.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8'); assert.strictEqual(saved.hotkeys.quit.enabled, false);
       assert.strictEqual(saved.weapon, 'double-edge'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
       assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('累计估算热量') !== -1);
-      result = await save('epoch', { toggle: { enabled: true, accelerator: 'F2' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'F3' } });
+      result = await save('epoch', { toggle: { enabled: true, accelerator: 'F3' }, quit: { enabled: false, accelerator: 'F3' }, weapon: { enabled: true, accelerator: 'F2' } });
       assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'double-edge');
       pass('Real renderer IPC saves custom shortcuts and independent switches; duplicate bindings rejected');
       result = await save('double-edge', api.status().config.hotkeys); assert(result.ok);
@@ -252,6 +252,19 @@ if (!secondary) {
       pass('Closing settings leaves the tray application running');
 
 
+      api.openSettings();
+      await delay(100);
+      const modeWindow=BrowserWindow.getAllWindows().filter(win=>win!==overlay)[0];
+      await modeWindow.webContents.executeJavaScript('document.getElementById("mode-select").value="hidden"; document.getElementById("mode-select").dispatchEvent(new Event("change"));');
+      menu.items.find(x=>x.label==='显示模式').submenu.items[2].click();
+      assert.strictEqual(await modeWindow.webContents.executeJavaScript('document.getElementById("mode-select").value'),'hidden');
+      await modeWindow.webContents.executeJavaScript('document.getElementById("save").click()');await delay(100);assert.strictEqual(api.status().config.mode,'hidden');
+      menu.items.find(x=>x.label==='显示模式').submenu.items[1].click();await delay(100);
+      assert.strictEqual(await modeWindow.webContents.executeJavaScript('document.getElementById("mode-select").value'),'right-mouse');
+      const lastCard=await modeWindow.webContents.executeJavaScript('Array.from(document.querySelectorAll(".card")).pop().contains(document.getElementById("quit-key"))');assert(lastCard);
+      await modeWindow.webContents.executeJavaScript('document.getElementById("mode-select").value="always";document.getElementById("mode-select").dispatchEvent(new Event("change"));document.getElementById("cancel").click()');assert.strictEqual(api.status().config.mode,'right-mouse');
+      pass('Settings mode draft survives tray updates, saves explicitly and cancels without applying; quit card is last');
+
       // Render actual overlay HTML in a separate test window; this does not claim game-focus coverage.
       const preview = new BrowserWindow({ width: 500, height: 200, frame: false, show: false,
         backgroundColor: '#101820', webPreferences: { nodeIntegration: true, contextIsolation: false } });
@@ -266,6 +279,12 @@ if (!secondary) {
         assert.strictEqual(visual.markers, require('../src/state').WEAPONS[weapon].markers.length);
         await new Promise(resolve => preview.capturePage(image => { fs.writeFileSync(path.join(output, 'overlay-' + weapon + '.png'), image.toPNG()); resolve(); }));
       }
+      for(const heat of [0,100]) {
+        preview.webContents.send('charge-state',{visible:true,weapon:'double-edge',heat:heat,showHeatText:true,notice:'双刃镰刀'});await delay(50);
+        assert(await preview.webContents.executeJavaScript('(()=>{const h=document.getElementById("heatLabel").getBoundingClientRect(), b=document.getElementById("barContainer").getBoundingClientRect(), n=document.getElementById("weaponNotice").getBoundingClientRect();return Math.abs(h.bottom-b.bottom)<2 && h.right<=innerWidth && h.top>=n.bottom;})()'));
+      }
+      preview.webContents.send('charge-state',{visible:true,weapon:'double-edge',heat:100,showHeatText:false});await delay(50);
+      assert.strictEqual(await preview.webContents.executeJavaScript('document.getElementById("heatLabel").style.display'),'none');
       preview.close();
       pass('Actual overlay renderer shows per-weapon markers and unclipped weapon names; screenshots captured');
 

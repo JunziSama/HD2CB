@@ -72,6 +72,7 @@ function publishOverlay() {
   if (quitting) return;
   const now = Date.now();
   const state = charge.snapshot(now);
+  state.showHeatText = config.showHeatText;
   const deadline = charge.nextDeadline();
   if (deadline !== null) {
     const revision = transitionRevision;
@@ -104,10 +105,10 @@ function refreshTray() {
     { type: 'separator' },
     { label: '启用切换模式热键（' + config.hotkeys.toggle.accelerator + '）',
       type: 'checkbox', checked: config.hotkeys.toggle.enabled, click: () => toggleHotkey('toggle') },
-    { label: '启用退出热键（' + config.hotkeys.quit.accelerator + '）',
-      type: 'checkbox', checked: config.hotkeys.quit.enabled, click: () => toggleHotkey('quit') },
     { label: '启用切换武器热键（' + config.hotkeys.weapon.accelerator + '）',
       type: 'checkbox', checked: config.hotkeys.weapon.enabled, click: () => toggleHotkey('weapon') },
+    { label: '启用退出热键（' + config.hotkeys.quit.accelerator + '）',
+      type: 'checkbox', checked: config.hotkeys.quit.enabled, click: () => toggleHotkey('quit') },
     { label: '双刃镰刀热量归零', click: resetHeat },
     { label: '热键仅在 HD2 前台时生效', enabled: false },
     { label: '武器与热键设置…', click: openSettings }
@@ -261,8 +262,8 @@ function setupIPC() {
     if (!trusted(event)) return;
     try {
       if (!draft || typeof draft !== 'object') throw new Error('设置格式无效。');
-      // The tray owns display mode; settings edit only the submitted fields.
-      applyConfig({ version: 3, mode: config.mode, weapon: draft.weapon, hotkeys: draft.hotkeys, heat: draft.heat });
+      // Omitted mode preserves the latest tray value for an untouched settings draft.
+      applyConfig({ version: 4, mode: draft.mode === undefined ? config.mode : draft.mode, weapon: draft.weapon, hotkeys: draft.hotkeys, heat: draft.heat, showHeatText: draft.showHeatText });
       event.sender.send('settings-result', { ok: true, message: '设置已保存。热键将在 HD2 前台时生效。' });
     } catch (error) { event.sender.send('settings-result', { ok: false, message: error.message }); }
   });
