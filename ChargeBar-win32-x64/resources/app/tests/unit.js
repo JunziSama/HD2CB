@@ -72,7 +72,7 @@ test('weapon colors, caps and markers match researched thresholds', () => {
 test('legacy migration preserves settings and chooses an unused weapon shortcut', () => {
   const old = { version: 1, mode: 'always', hotkeys: { toggle: { enabled: false, accelerator: 'f3' }, quit: { enabled: true, accelerator: 'F4' } } };
   const migrated = state.validateConfig(old);
-  assert.strictEqual(migrated.version, 2); assert.strictEqual(migrated.weapon, 'epoch');
+  assert.strictEqual(migrated.version, 3); assert.strictEqual(migrated.weapon, 'epoch');
   assert.strictEqual(migrated.mode, 'always'); assert.strictEqual(migrated.hotkeys.toggle.enabled, false);
   assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
   assert.strictEqual(old.version, 1);
@@ -342,7 +342,7 @@ test('open tray defers replacement until close and settings changes invalidate q
   assert.strictEqual(h.api.status().config.weapon, 'railgun'); h.app.quit();
 });
 
-test('quasar has green charging, cyan completion, no damage markers and persists in v2', () => {
+test('quasar has green charging, cyan completion, no damage markers and persists in current config', () => {
   [0, 1000, 2999].forEach(t => assert.strictEqual(state.chargeStyle(t, 'quasar').color, 'green'));
   assert.strictEqual(state.chargeStyle(3000, 'quasar').color, 'cyan');
   assert.strictEqual(state.chargeStyle(3500, 'quasar').percent, 100);
@@ -356,10 +356,10 @@ test('quasar has green charging, cyan completion, no damage markers and persists
   model.mouse(1, true, 7200); assert.strictEqual(model.snapshot(7500).elapsed, 300);
   model.setFocus(false, 7600); model.setFocus(true, 7700); assert.strictEqual(model.snapshot(7700).elapsed, 0);
 });
-test('six-weapon shortcut cycle preserves native registrations and cancels quasar deadlines', () => {
+test('seven-weapon shortcut cycle preserves native registrations and cancels quasar deadlines', () => {
   const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
   const resets = h.shortcuts.resets;
-  ['railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
+  ['railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'double-edge', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
     h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, weapon);
   });
   assert.strictEqual(h.shortcuts.resets, resets);
@@ -402,5 +402,67 @@ test('switching between timed and release weapons cancels old completion callbac
   old(); h.advance(10000); assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'complete');
   h.trays[0].menu.find(x => x.label === '当前武器').submenu[0].click();
   assert.strictEqual(h.windows[0].last.data.elapsed, 0); h.app.quit();
+});
+
+const heatModule = require('../src/heat');
+function near(actual, expected) { assert(Math.abs(actual - expected) < 0.00001, actual + ' != ' + expected); }
+test('heat warmup short taps accumulation cooling and saturation use elapsed time', () => {
+  const h = new heatModule.HeatState(); h.start(0); h.advance(499); near(h.value, 0);
+  h.stop(499); h.start(1000); h.advance(1500); near(h.value, 0);
+  h.advance(2500); near(h.value, 6.708); h.stop(2500); h.advance(3000); near(h.value, 4.708);
+  h.start(3000); h.advance(3500); near(h.value, 2.708); h.advance(4500); near(h.value, 9.416);
+  h.advance(100000); near(h.value, 100); h.stop(100000); h.advance(125000); near(h.value, 0);
+  h.configure(Object.assign(heatModule.heatDefaults(), heatModule.PRESETS.cold), 125000);
+  h.start(125000); h.advance(127500); near(h.value, 13.416); h.stop(127500); h.advance(128500); near(h.value, 7.416);
+});
+test('heat colors and v1/v2 migration validation cover boundaries conflicts and corrupt values', () => {
+  [[0,'green'],[25.99,'green'],[26,'yellow'],[50.99,'yellow'],[51,'orange'],[90.99,'orange'],[91,'red'],[100,'red']].forEach(x => assert.strictEqual(heatModule.heatStyle(x[0]).color,x[1]));
+  const old = state.defaults(); old.version=2; old.weapon='loyalist'; delete old.heat;
+  const migrated=state.validateConfig(old); assert.strictEqual(migrated.version,3); assert.strictEqual(migrated.weapon,'loyalist'); assert.strictEqual(migrated.heat.monitor.key,'R');
+  ['warmup','heating','cooling'].forEach(key => [null,'',NaN,Infinity,-1,101].forEach(value => { const c=state.defaults(); c.heat[key]=value; assert.throws(()=>state.validateConfig(c)); }));
+  const c=state.defaults(); c.heat.monitor.key='F1'; assert.throws(()=>state.validateConfig(c)); c.heat.monitor.key='Ctrl+R'; assert.throws(()=>state.validateConfig(c));
+  ['R','7','F24'].forEach(key=>assert.strictEqual(heatModule.normalizeMonitorKey(key),key));
+  c.heat.monitor.key='r'; c.heat.heating=8; assert.strictEqual(state.validateConfig(c).heat.preset,'custom');
+  assert.strictEqual(heatModule.monitorKeyFromEvent({rawcode:82}),'R'); assert.strictEqual(heatModule.monitorKeyFromEvent({rawcode:135}),'F24');
+});
+test('heat survives hidden mode focus loss and switching but never resumes held fire', () => {
+  const m=new state.ChargeState('hidden','double-edge'); m.setFocus(true,0); m.mouse(1,true,0); m.snapshot(2500); near(m.heat.value,13.416);
+  m.setFocus(false,2500); m.setFocus(true,3500); near(m.snapshot(3500).heat,9.416); assert(!m.left);
+  m.setWeapon('epoch',3500); m.setWeapon('double-edge',4500); near(m.snapshot(4500).heat,5.416);
+  m.setMode('always'); assert(m.snapshot(4500).visible); assert.strictEqual(m.heat.firedAt,null);
+  m.mouse(1,true,4500); m.snapshot(6500); m.resetHeat(6500); near(m.snapshot(6500).heat,0);
+  m.mouse(1,true,7000); near(m.snapshot(8000).heat,0);
+  m.mouse(1,false,8000); m.mouse(1,true,8000); near(m.snapshot(9500).heat,6.708);
+});
+test('heat config changes settle old rate preserve percentage and cancel held input', () => {
+  const m=new state.ChargeState('always','double-edge'); m.setFocus(true,0); m.mouse(1,true,0);
+  const changed=heatModule.heatDefaults(); changed.heating=20; changed.preset='custom';
+  m.configureHeat(changed,2500); near(m.heat.value,13.416); assert(m.requireRelease);
+  m.mouse(1,true,2600); near(m.snapshot(3500).heat,9.416);
+  m.mouse(1,false,3500); m.mouse(1,true,3500); near(m.snapshot(5000).heat,27.416);
+});
+test('passive reload monitor gates focus weapon enable state and ignores repeat keydowns', () => {
+  const h=harness(); const focus={hasWindow:true,processName:'helldivers2.exe'}; h.monitors[0].emit('state',focus);
+  h.trays[0].menu.find(x=>x.label==='当前武器').submenu[6].click();
+  assert(!h.bindings.has('R')); h.hook.emit('mousedown',{button:2}); h.hook.emit('mousedown',{button:1}); h.advance(2500);
+  near(h.windows[0].last.data.heat,13.416); h.hook.emit('keydown',{rawcode:82}); near(h.windows[0].last.data.heat,0);
+  h.hook.emit('mousedown',{button:1}); h.advance(1000); near(h.windows[0].last.data.heat,0);
+  h.hook.emit('mouseup',{button:1}); h.hook.emit('mousedown',{button:1}); h.advance(1500);
+  h.hook.emit('keydown',{rawcode:82}); near(h.windows[0].last.data.heat,6.708);
+  h.hook.emit('keyup',{rawcode:82}); h.hook.emit('keydown',{rawcode:82,ctrlKey:true}); near(h.windows[0].last.data.heat,6.708);
+  h.hook.emit('keyup',{rawcode:82}); h.api.openSettings(); const draft=JSON.parse(JSON.stringify(h.api.status().config)); draft.heat.monitor.enabled=false;
+  h.ipcMain.emit('settings-save',{sender:h.windows[1].webContents},draft);
+  h.hook.emit('keydown',{rawcode:82}); assert(h.windows[0].last.data.heat>0);
+  h.ipcMain.emit('heat-reset',{sender:h.windows[0].webContents}); assert(h.windows[0].last.data.heat>0);
+  h.ipcMain.emit('heat-reset',{sender:h.windows[1].webContents}); near(h.windows[0].last.data.heat,0);
+  h.app.quit(); assert.strictEqual(h.timers.size,0);
+});
+test('heat saving failure leaves parameters intact and runtime heat is never persisted', () => {
+  const h=harness(); h.api.openSettings(); const before=JSON.stringify(h.api.status().config);
+  const draft=JSON.parse(before); draft.heat.cooling=7; draft.heat.preset='custom';
+  fs.mkdirSync(path.join(h.userData,'settings.json.tmp'));
+  h.ipcMain.emit('settings-save',{sender:h.windows[1].webContents},draft);
+  assert.strictEqual(h.windows[1].last.data.ok,false); assert.strictEqual(JSON.stringify(h.api.status().config),before);
+  assert.strictEqual(new heatModule.HeatState().value,0); h.app.quit();
 });
 console.log('\n' + count + ' tests passed.');

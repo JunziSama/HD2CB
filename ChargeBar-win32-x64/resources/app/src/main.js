@@ -1,6 +1,8 @@
 'use strict';
 const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain } = require('electron');
 const path = require('path');
+const { monitorKeyFromEvent } = require('./heat');
+const pressedMonitorKeys = new Set();
 const { MODES, LABELS, ACTIONS, WEAPON_IDS, WEAPONS, validateConfig, isHD2, ChargeState } = require('./state');
 const { readConfig, writeConfig } = require('./config');
 const FocusMonitor = require('./focus-monitor');
@@ -106,6 +108,7 @@ function refreshTray() {
       type: 'checkbox', checked: config.hotkeys.quit.enabled, click: () => toggleHotkey('quit') },
     { label: '启用切换武器热键（' + config.hotkeys.weapon.accelerator + '）',
       type: 'checkbox', checked: config.hotkeys.weapon.enabled, click: () => toggleHotkey('weapon') },
+    { label: '双刃镰刀热量归零', click: resetHeat },
     { label: '热键仅在 HD2 前台时生效', enabled: false },
     { label: '武器与热键设置…', click: openSettings }
   ];
@@ -163,6 +166,11 @@ function syncShortcuts() {
   }
 }
 
+function resetHeat() {
+  charge.resetHeat(Date.now());
+  publishOverlay();
+}
+
 function applyConfig(candidate) {
   const next = validateConfig(candidate);
   try { writeConfig(configFile, next); }
@@ -170,7 +178,8 @@ function applyConfig(candidate) {
   config = next;
   configWarning = null;
   charge.setMode(config.mode);
-  charge.setWeapon(config.weapon);
+  charge.configureHeat(config.heat, Date.now());
+  charge.setWeapon(config.weapon, Date.now());
   syncShortcuts();
   publishOverlay();
   refreshTray();
@@ -253,10 +262,11 @@ function setupIPC() {
     try {
       if (!draft || typeof draft !== 'object') throw new Error('设置格式无效。');
       // The tray owns display mode; settings edit only the submitted fields.
-      applyConfig({ version: 2, mode: config.mode, weapon: draft.weapon, hotkeys: draft.hotkeys });
+      applyConfig({ version: 3, mode: config.mode, weapon: draft.weapon, hotkeys: draft.hotkeys, heat: draft.heat });
       event.sender.send('settings-result', { ok: true, message: '设置已保存。热键将在 HD2 前台时生效。' });
     } catch (error) { event.sender.send('settings-result', { ok: false, message: error.message }); }
   });
+  ipcMain.on('heat-reset', event => { if (trusted(event)) resetHeat(); });
   ipcMain.on('settings-close', event => { if (trusted(event)) settingsWindow.close(); });
   ipcMain.on('settings-retry', event => { if (trusted(event)) restartDetection(); });
 }
@@ -270,7 +280,7 @@ function initialize() {
     try { writeConfig(configFile, config); }
     catch (error) { configWarning = '旧配置已迁移，但保存失败：' + error.message; }
   }
-  charge = new ChargeState(config.mode, config.weapon);
+  charge = new ChargeState(config.mode, config.weapon, config.heat);
   tray = new Tray(path.join(__dirname, 'tray.png'));
   tray.on('click', () => tray.popUpContextMenu());
   tray.on('double-click', openSettings);
@@ -291,6 +301,13 @@ function initialize() {
     hook = require('iohook');
     hook.on('mousedown', event => { charge.mouse(event.button, true, Date.now()); publishOverlay(); });
     hook.on('mouseup', event => { charge.mouse(event.button, false, Date.now()); publishOverlay(); });
+    hook.on('keydown', event => {
+      const key = monitorKeyFromEvent(event);
+      if (!key || pressedMonitorKeys.has(key)) return;
+      pressedMonitorKeys.add(key);
+      if (!event.ctrlKey && !event.altKey && !event.shiftKey && !event.metaKey && charge.focused && config.weapon === 'double-edge' && config.heat.monitor.enabled && key === config.heat.monitor.key) resetHeat();
+    });
+    hook.on('keyup', event => { pressedMonitorKeys.delete(monitorKeyFromEvent(event)); });
     hook.start();
   } catch (error) { inputError = '鼠标监听无法启动，请重新启动程序：' + error.message; }
 

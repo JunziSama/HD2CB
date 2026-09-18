@@ -77,19 +77,20 @@ if (!secondary) {
       if (phase === 'restore') {
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
-        assert.strictEqual(api.status().config.weapon, 'loyalist');
+        assert.strictEqual(api.status().config.weapon, 'double-edge');
         assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
-        pass('Restart restores saved custom hotkeys and independent enable switches');
+        assert.strictEqual(api.status().config.heat.preset, 'cold'); assert.strictEqual(api.status().config.heat.cooling, 6); assert.strictEqual(api.status().config.heat.monitor.key, 'T');
+        pass('Restart restores saved custom hotkeys and heat preset/monitor key');
         finish(); return;
       }
       if (phase === 'legacy') {
-        assert.strictEqual(api.status().config.version, 2);
+        assert.strictEqual(api.status().config.version, 3);
         assert.strictEqual(api.status().config.weapon, 'epoch');
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'F3');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
         assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'F5');
         const migrated = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
-        assert.strictEqual(migrated.version, 2); assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
+        assert.strictEqual(migrated.version, 3); assert.strictEqual(migrated.hotkeys.weapon.accelerator, 'F5');
         pass('Legacy settings migrate on startup without losing mode or shortcuts; occupied F3/F4 selects F5');
         finish(); return;
       }
@@ -154,6 +155,23 @@ if (!secondary) {
       pass('Native F1 and custom Ctrl+Shift+F9 work after repeated F3 switches');
       assert(!overlay.isVisible());
       const hook = require('iohook');
+      menu.items.find(item => item.label === '当前武器').submenu.items[6].click();
+      hook.emit('mousedown', { button: 2 }); hook.emit('mousedown', { button: 1 });
+      await delay(900);
+      const readHeat = () => overlay.webContents.executeJavaScript('document.getElementById("heatLabel").textContent');
+      assert(!/^估算热量 0%$/.test(await readHeat()));
+      assert(!globalShortcut.isRegistered('R'));
+      game.stdin.write('key:r\n');
+      await delay(150);
+      assert.strictEqual(await readHeat(), '估算热量 0%');
+      assert(fs.readFileSync(path.join(output, 'fixture.log'), 'utf8').indexOf('received-key:R') !== -1, 'R must reach the test game');
+      await delay(700); assert.strictEqual(await readHeat(), '估算热量 0%');
+      hook.emit('mouseup', { button: 1 }); hook.emit('mousedown', { button: 1 }); await delay(900);
+      assert.notStrictEqual(await readHeat(), '估算热量 0%');
+      hook.emit('mouseup', { button: 1 });
+      menu.items.find(item => item.label === '当前武器').submenu.items[0].click();
+      hook.emit('mouseup', { button: 2 });
+      pass('Native R resets estimated heat without consuming the key; held left cannot resume until released');
       hook.emit('mousedown', { button: 2 }); hook.emit('mousedown', { button: 1 });
       await until(() => overlay.isVisible(), 'right mouse display');
       await delay(120);
@@ -199,7 +217,7 @@ if (!secondary) {
       assert.strictEqual(ui.key, 'F1');
       assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-key").value'), 'F3');
 
-      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-select").options.length'), 6);
+      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-select").options.length'), 7);
       await delay(150);
       await new Promise(resolve => settings.capturePage(image => {
         fs.writeFileSync(path.join(output, 'settings.png'), image.toPNG()); resolve();
@@ -210,15 +228,26 @@ if (!secondary) {
         'new Promise(resolve => { const ipc = require("electron").ipcRenderer; ipc.once("settings-result", (event, result) => resolve(result)); ' +
         'const draft = ' + JSON.stringify({ weapon, hotkeys }) + '; const select = document.getElementById("weapon-select"); select.value = draft.weapon; select.dispatchEvent(new Event("change")); ' +
         'Object.keys(draft.hotkeys).forEach(action => { const key = document.getElementById(action + "-key"); key.value = draft.hotkeys[action].accelerator; key.dispatchEvent(new Event("input")); const enabled = document.getElementById(action + "-enabled"); enabled.checked = draft.hotkeys[action].enabled; enabled.dispatchEvent(new Event("change")); }); document.getElementById("save").click(); })');
-      let result = await save('loyalist', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
+      let result = await save('double-edge', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
       assert(result.ok, result.message);
       const saved = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
       assert.strictEqual(saved.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8'); assert.strictEqual(saved.hotkeys.quit.enabled, false);
-      assert.strictEqual(saved.weapon, 'loyalist'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
-      assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('0.75') !== -1);
+      assert.strictEqual(saved.weapon, 'double-edge'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
+      assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('累计估算热量') !== -1);
       result = await save('epoch', { toggle: { enabled: true, accelerator: 'F2' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'F3' } });
-      assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'loyalist');
+      assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'double-edge');
       pass('Real renderer IPC saves custom shortcuts and independent switches; duplicate bindings rejected');
+      result = await save('double-edge', api.status().config.hotkeys); assert(result.ok);
+      const heatLayout = await settings.webContents.executeJavaScript('(() => { const select = document.getElementById("weapon-select"); select.value="double-edge"; select.dispatchEvent(new Event("change")); const preset = document.getElementById("heat-preset"); preset.value="cold"; preset.dispatchEvent(new Event("change")); return {cooling: document.getElementById("heat-cooling").value, scroll: document.body.scrollHeight > window.innerHeight}; })()');
+      assert.strictEqual(heatLayout.cooling, '6'); assert(heatLayout.scroll);
+      await settings.webContents.executeJavaScript('document.getElementById("heat-record").click(); document.dispatchEvent(new KeyboardEvent("keydown", {key:"T",bubbles:true})); document.getElementById("heat-panel").scrollIntoView();');
+      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("heat-monitor-key").value'), 'T');
+      result = await settings.webContents.executeJavaScript('new Promise(resolve => { require("electron").ipcRenderer.once("settings-result", (event,result) => resolve(result)); document.getElementById("save").click(); })');
+      assert(result.ok); assert.strictEqual(api.status().config.heat.preset, 'cold');
+      assert.strictEqual(api.status().config.heat.monitor.key, 'T');
+      await delay(150);
+      await new Promise(resolve => settings.capturePage(image => { fs.writeFileSync(path.join(output, 'settings-heat.png'), image.toPNG()); resolve(); }));
+      pass('Heat settings scroll, cold preset and monitor key recording save correctly');
       settings.close(); assert.strictEqual(BrowserWindow.getAllWindows().length, 1);
       pass('Closing settings leaves the tray application running');
 
@@ -230,10 +259,10 @@ if (!secondary) {
       preview.show();
       for (const weapon of require('../src/state').WEAPON_IDS) {
         preview.webContents.send('charge-state', { visible: true, charging: false, elapsed: weapon === 'epoch' ? 2600 : 3000,
-          weapon: weapon, phase: 'complete', notice: require('../src/state').WEAPONS[weapon].shortName });
+          weapon: weapon, phase: 'complete', heat: 95, notice: require('../src/state').WEAPONS[weapon].shortName });
         await delay(100);
         const visual = await preview.webContents.executeJavaScript('(() => { const label = document.getElementById("weaponNotice"); const box = label.getBoundingClientRect(); return { fits: box.left >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight, text: label.textContent, color: document.getElementById("fill").style.backgroundColor, markers: document.querySelectorAll(".marker").length }; })()');
-        assert(visual.fits, 'Weapon notice must not be clipped'); assert.strictEqual(visual.color, ['epoch', 'railgun'].indexOf(weapon) === -1 ? 'cyan' : 'red');
+        assert(visual.fits, 'Weapon notice must not be clipped'); assert.strictEqual(visual.color, ['epoch', 'railgun', 'double-edge'].indexOf(weapon) === -1 ? 'cyan' : 'red');
         assert.strictEqual(visual.markers, require('../src/state').WEAPONS[weapon].markers.length);
         await new Promise(resolve => preview.capturePage(image => { fs.writeFileSync(path.join(output, 'overlay-' + weapon + '.png'), image.toPNG()); resolve(); }));
       }

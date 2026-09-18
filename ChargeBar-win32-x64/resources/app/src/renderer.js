@@ -1,6 +1,8 @@
 'use strict';
 const { ipcRenderer } = require('electron');
 const { WEAPONS, chargeStyle } = require('./state');
+const { heatStyle } = require('./heat');
+const heatLabel = document.getElementById('heatLabel');
 const fill = document.getElementById('fill');
 const bar = document.getElementById('barContainer');
 const notice = document.getElementById('weaponNotice');
@@ -28,7 +30,10 @@ function render() {
   notice.textContent = state.notice || '';
   notice.style.display = state.visible && state.notice ? 'block' : 'none';
   const elapsed = state.elapsed + (state.charging ? performance.now() - receivedAt : 0);
-  const style = chargeStyle(elapsed, state.weapon);
+  const isHeat = state.weapon === 'double-edge';
+  heatLabel.style.display = state.visible && isHeat ? 'block' : 'none';
+  heatLabel.textContent = isHeat ? '估算热量 ' + Math.round(state.heat || 0) + '%' : '';
+  const style = isHeat ? heatStyle(state.heat || 0) : chargeStyle(elapsed, state.weapon);
   fill.style.height = style.percent + '%';
   fill.style.backgroundColor = style.color;
   if (state.visible && state.charging && elapsed < profile.duration) animation = requestAnimationFrame(render);

@@ -11,6 +11,8 @@ internal static class TestGame
     {
         Application.EnableVisualStyles();
         Form window = new Form { Text = "HD2CB 焦点测试窗口（非游戏）", Width = 440, Height = 150 };
+        window.KeyPreview = true;
+        window.KeyDown += delegate(object sender, KeyEventArgs e) { Console.WriteLine("received-key:" + e.KeyCode); Console.Out.Flush(); };
         window.Controls.Add(new Label { Text = "自动检查前台识别与切出隐藏，即将自动关闭。", Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleCenter });
         window.Shown += delegate {
             Console.WriteLine("ready"); Console.Out.Flush();

@@ -46,6 +46,7 @@
       left: 0;
     }
 
+    #heatLabel { position: absolute; left: 18px; top: 0; white-space: nowrap; color: white; background: rgba(16,24,32,.9); padding: 3px 6px; font: 13px "Microsoft YaHei", sans-serif; pointer-events: none; display: none; }
     #weaponNotice {
       display: none;
       position: absolute;
@@ -67,6 +68,7 @@
   <div id="barContainer">
     <div id="fill"></div>
     <div id="markers"></div>
+    <div id="heatLabel" role="status"></div>
     <div id="weaponNotice" role="status"></div>
   </div>
   <script src="renderer.js"></script>

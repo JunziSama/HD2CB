@@ -1,10 +1,14 @@
 'use strict';
+const { heatDefaults, validateHeat, HeatState } = require('./heat');
 
 const MODES = ['hidden', 'right-mouse', 'always'];
 const LABELS = ['隐藏', '按住右键显示', '游戏内常显'];
 const ACTIONS = ['toggle', 'quit', 'weapon'];
-const WEAPON_IDS = ['epoch', 'railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist'];
+const WEAPON_IDS = ['epoch', 'railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'double-edge'];
 const WEAPONS = {
+  'double-edge': { name: 'LAS-17 双刃镰刀', shortName: '双刃镰刀', duration: 100, completion: 'heat',
+    markers: [{ at: 26, label: '26% 热量阶段' }, { at: 51, label: '51% 热量阶段' }, { at: 91, label: '91% 热量阶段' }],
+    description: '累计估算热量 · 射击升温、松手冷却 · 颜色不代表安全保证' },
   'arc-thrower': { name: 'ARC-3 电弧发射器', shortName: '电弧发射器', duration: 1000, completion: 'release', markers: [],
     description: '约 1 秒蓄满 · 青色保持到松手，松手清零' },
   purifier: { name: 'PLAS-101 净化者', shortName: '净化者', duration: 1000, completion: 'release', markers: [],
@@ -22,7 +26,7 @@ const WEAPONS = {
 };
 
 function defaults() {
-  return { version: 2, mode: 'right-mouse', weapon: 'epoch', hotkeys: {
+  return { version: 3, heat: heatDefaults(), mode: 'right-mouse', weapon: 'epoch', hotkeys: {
     toggle: { enabled: true, accelerator: 'F1' },
     quit: { enabled: true, accelerator: 'F2' },
     weapon: { enabled: true, accelerator: 'F3' }
@@ -55,13 +59,13 @@ function normalizeAccelerator(value) {
 }
 
 function validateConfig(value) {
-  if (!value || [1, 2].indexOf(value.version) === -1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
+  if (!value || [1, 2, 3].indexOf(value.version) === -1 || MODES.indexOf(value.mode) === -1 || !value.hotkeys) {
     throw new Error('配置格式或显示模式无效。');
   }
   const legacy = value.version === 1;
   const weapon = legacy ? 'epoch' : value.weapon;
   if (WEAPON_IDS.indexOf(weapon) === -1) throw new Error('武器选择无效。');
-  const result = { version: 2, mode: value.mode, weapon: weapon, hotkeys: {} };
+  const result = { version: 3, mode: value.mode, weapon: weapon, hotkeys: {} };
   const used = [];
   (legacy ? ['toggle', 'quit'] : ACTIONS).forEach(action => {
     const item = value.hotkeys[action];
@@ -76,6 +80,7 @@ function validateConfig(value) {
     while (used.indexOf('F' + key) !== -1) key++;
     result.hotkeys.weapon = { enabled: true, accelerator: 'F' + key };
   }
+  result.heat = validateHeat(value.version < 3 ? heatDefaults() : value.heat, result.hotkeys);
   return result;
 }
 
@@ -86,7 +91,8 @@ function isHD2(state) {
 }
 
 class ChargeState {
-  constructor(mode, weapon) {
+  constructor(mode, weapon, heatConfig) {
+    this.heat = new HeatState(heatConfig);
     this.mode = mode;
     this.weapon = weapon || 'epoch';
     this.focused = false;
@@ -99,6 +105,8 @@ class ChargeState {
     this.noticeUntil = null;
   }
   advance(now) {
+    this.heat.advance(now);
+    if (this.weapon === 'double-edge') return;
     if (this.startedAt === null) return;
     const elapsed = now - this.startedAt;
     const duration = WEAPONS[this.weapon].duration;
@@ -108,6 +116,7 @@ class ChargeState {
   setFocus(focused, now) {
     this.advance(now === undefined ? Date.now() : now);
     if (!focused) {
+      this.heat.stop(now === undefined ? Date.now() : now);
       this.phase = WEAPONS[this.weapon].completion === 'timed' && (this.phase === 'complete' || this.phase === 'waiting') ? 'waiting' : 'idle';
       this.left = false;
       this.right = false;
@@ -122,9 +131,10 @@ class ChargeState {
     if (MODES.indexOf(mode) === -1) throw new Error('无效显示模式');
     this.mode = mode;
   }
-  setWeapon(weapon) {
+  setWeapon(weapon, now) {
     if (WEAPON_IDS.indexOf(weapon) === -1) throw new Error('武器选择无效。');
     if (weapon === this.weapon) return;
+    this.heat.stop(now === undefined ? Date.now() : now);
     this.weapon = weapon;
     this.requireRelease = this.requireRelease || this.left;
     this.left = false;
@@ -133,9 +143,28 @@ class ChargeState {
     this.noticeUntil = null;
     this.noticePending = true;
   }
+  configureHeat(config, now) {
+    if (JSON.stringify(config) === JSON.stringify(this.heat.config)) return;
+    this.heat.configure(config, now);
+    if (this.weapon === 'double-edge') this.resetInputAfterHeatChange();
+  }
+  resetInputAfterHeatChange() {
+    this.requireRelease = this.requireRelease || this.left;
+    this.left = false; this.startedAt = null; this.phase = 'idle';
+  }
+  resetHeat(now) {
+    this.heat.reset(now);
+    if (this.weapon === 'double-edge') this.resetInputAfterHeatChange();
+  }
   mouse(button, down, now) {
     if (!this.focused) return;
     this.advance(now);
+    if (this.weapon === 'double-edge') {
+      if (button === 1 && !down) { this.heat.stop(now); this.left = false; this.requireRelease = false; }
+      else if (button === 1 && down && !this.left && !this.requireRelease) { this.left = true; this.heat.start(now); }
+      if (button === 2) this.right = down;
+      return;
+    }
     if (button === 1) {
       if (!down) {
         this.left = false;
@@ -161,11 +190,12 @@ class ChargeState {
     const running = this.phase === 'charging' || this.phase === 'complete';
     return { visible: visible, charging: visible && this.phase === 'charging',
       elapsed: visible && running ? Math.min(WEAPONS[this.weapon].duration, Math.max(0, now - this.startedAt)) : 0,
-      weapon: this.weapon, phase: this.phase,
+      weapon: this.weapon, phase: this.phase, heat: this.weapon === 'double-edge' ? this.heat.value : null,
       notice: visible && this.noticeUntil !== null ? WEAPONS[this.weapon].shortName : null };
   }
   nextDeadline() {
     const deadlines = [];
+    if (this.focused && this.weapon === 'double-edge' && (this.heat.value > 0 || this.left)) deadlines.push(this.heat.lastAt + 50);
     if (this.focused && this.startedAt !== null) {
       if (this.phase === 'charging') deadlines.push(this.startedAt + WEAPONS[this.weapon].duration);
       if (this.phase === 'complete' && WEAPONS[this.weapon].completion === 'timed') deadlines.push(this.startedAt + WEAPONS[this.weapon].duration + 500);
