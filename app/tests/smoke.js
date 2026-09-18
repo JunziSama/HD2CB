@@ -56,7 +56,7 @@ async function until(predicate, description, timeout) {
   }
 }
 function pass(text) { checks.push(text); }
-function finish(error) {
+function finish(error, alreadyQuitting) {
   if (game) game.kill();
   if (error) failure = error.stack || String(error);
   fs.writeFileSync(path.join(output, 'result-' + phase + '.json'), JSON.stringify({ passed: !failure, checks, failure,
@@ -64,7 +64,7 @@ function finish(error) {
     balloons: balloons.map(item => item.content), windows: BrowserWindow.getAllWindows().map(win => ({
       title: win.getTitle(), visible: win.isVisible(), loading: win.webContents.isLoading(), url: win.webContents.getURL()
     })) }, null, 2));
-  app.quit();
+  if (!alreadyQuitting) app.quit();
 }
 if (!secondary) {
   process.on('uncaughtException', finish);
@@ -74,6 +74,14 @@ if (!secondary) {
       await until(() => api.status().detection === '等待 HD2 聚焦', 'initial foreground sample');
       assert.strictEqual(api.status().inputError, null);
       assert.strictEqual(api.status().detectorError, null);
+      if (phase === 'native-quit') {
+        api.openSettings();await delay(200);
+        game=childProcess.spawn(path.join(output,'helldivers2.exe'),[],{windowsHide:false,stdio:['pipe','pipe','pipe']});
+        game.stdout.on('data',data=>fs.appendFileSync(path.join(output,'fixture-quit.log'),data));game.stdin.on('error',()=>{});
+        await until(()=>api.status().focused,'quit fixture foreground');assert(globalShortcut.isRegistered('F3'));
+        app.once('before-quit',()=>{pass('Real Windows F3 invokes application quit; external runner verifies clean exit and helper cleanup');finish(null,true);});
+        game.stdin.write('key:{F3}\n');return;
+      }
       if (phase === 'restore') {
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
@@ -140,7 +148,7 @@ if (!secondary) {
       }
       await pressWeapon('{F2}');
       for (let i = 0; i < 8; i++) await pressWeapon('{F2}');
-      pass('Real Windows F3 dispatch switches weapon repeatedly and main loop remains responsive');
+      pass('Real Windows F2 dispatch switches weapon repeatedly and main loop remains responsive');
       const modeBefore = api.status().config.mode;
       game.stdin.write('key:{F1}\n');
       await until(() => api.status().config.mode !== modeBefore, 'native F1');
@@ -152,9 +160,9 @@ if (!secondary) {
       await pressWeapon('^+{F9}');
       custom.hotkeys.weapon.accelerator = 'F2';
       electron.ipcMain.emit('settings-save', { sender: launcher.webContents }, custom);
-      pass('Native F1 and custom Ctrl+Shift+F9 work after repeated F3 switches');
+      pass('Native F1 and custom Ctrl+Shift+F9 work after repeated F2 switches');
       assert(!overlay.isVisible());
-      const hook = require('iohook');
+      const hook = require(process.env.HD2CB_QA_MAIN ? path.resolve(path.dirname(process.env.HD2CB_QA_MAIN), '../node_modules/iohook') : 'iohook');
       menu.items.find(item => item.label === '当前武器').submenu.items[6].click();
       hook.emit('mousedown', { button: 2 }); hook.emit('mousedown', { button: 1 });
       await delay(900);

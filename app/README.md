@@ -1,6 +1,6 @@
 # HD2 ChargeBar
 
-最新发布版本：**1.2.0**；main 新增的三把松手发射武器及双刃镰刀热量提示尚未发布运行包。仓库：[JunziSama/HD2CB](https://github.com/JunziSama/HD2CB)。
+当前发布版本：**1.3.0**，包含七把武器与双刃镰刀估算热量。仓库：[JunziSama/HD2CB](https://github.com/JunziSama/HD2CB)。
 
 ## 1.3.0 更新
 

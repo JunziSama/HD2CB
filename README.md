@@ -1,12 +1,12 @@
 # HD2CB
 
-《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。当前本地版本：**1.3.0**；GitHub 最新发布版本仍为 **1.2.0**，适用于 Windows x64。
+《绝地潜兵 2》鼠标长按充能提示工具，基于 [nine-sec/HD2-ChargeBar](https://github.com/nine-sec/HD2-ChargeBar) 改进。当前本地版本：**1.3.0**；GitHub 发布版本：**1.3.0**，适用于 Windows x64。
 
 本项目保留原作者版权及 ISC 许可证，新增托盘管理、单实例运行、前台窗口识别和可配置热键。前台判定参考 [GRW-CNChat](https://github.com/GameXueRen/GRW-CNChat) 的思路，使用独立编写的 Windows API 检测助手，未复制其 AutoHotkey 代码。
 
 ## 下载与运行
 
-从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.2.0-win32-x64.zip`，完整解压后运行包内的 `ChargeBar.exe`。不要单独移动 EXE。
+从 [Releases](https://github.com/JunziSama/HD2CB/releases) 下载 `HD2CB-v1.3.0-win32-x64.zip`，完整解压后运行包内的 `ChargeBar.exe`。不要单独移动 EXE。
 
 GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖或已编译助手，不能直接双击运行。
 
@@ -18,8 +18,8 @@ GitHub 的 “Source code” 压缩包仅含源码，不包含 Electron、依赖
 - 默认 F1 切换模式、F2 切换武器、F3 退出，仅游戏前台生效；可分别开关、修改快捷键。
 - 自动记住武器选择、显示模式和热键设置。关闭设置窗口后继续驻留托盘。
 - 支持 PLAS-45 纪元、RS-422 磁轨炮（不安全模式）及 LAS-99 类星体加农炮，分别显示对应颜色和刻度。
-- main 另支持电弧发射器、净化者、忠诚者：绿色蓄力，满格青色保持到松手。
-- main 新增 LAS-17 双刃镰刀：累计估算热量、环境参数校准、被动换弹键监控与手动归零。
+- 另支持电弧发射器、净化者、忠诚者：绿色蓄力，满格青色保持到松手。
+- 新增 LAS-17 双刃镰刀：累计估算热量、环境参数校准、被动换弹键监控与手动归零。
 - 原有三把武器到顶后保留完成提示 0.5 秒（类星体为青色，其余为红色），再隐藏等待新的左键按下；切换时在条旁提示武器名 2 秒。
 
 本工具显示鼠标长按时间，不读取游戏实际武器充能状态。建议使用窗口化或无边框游戏模式。

@@ -61,6 +61,7 @@ function run(phase) {
   results.push(await run('legacy'));
   fs.writeFileSync(path.join(output, 'userData', 'settings.json'), '{corrupt');
   results.push(await run('corrupt'));
+  if (env.HD2CB_INTERACTIVE_FOCUS === '1') results.push(await run('native-quit')); 
   // Allow orphan detection/OS teardown to settle, then verify all helper PIDs exited.
   await new Promise(resolve => setTimeout(resolve, 300));
   results.forEach(result => result.helperPids.forEach(pid => {
