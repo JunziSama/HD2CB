@@ -87,7 +87,7 @@ test('railgun holds red for 500 ms, ignores release after full charge, and waits
   model.mouse(1, true, 100);
   assert.strictEqual(model.snapshot(3099).phase, 'charging');
   assert.strictEqual(model.snapshot(3100).phase, 'complete');
-  model.mouse(1, false, 3200); assert.strictEqual(model.snapshot(3200).elapsed, 3100);
+  model.mouse(1, false, 3200); assert.strictEqual(model.snapshot(3200).elapsed, 3000);
   assert(model.snapshot(3599).visible); assert(!model.snapshot(3600).visible);
   model.setFocus(false, 3700); model.setFocus(true, 3800); assert(!model.snapshot(3800).visible);
   model.mouse(1, true, 3900); assert(model.snapshot(3900).visible);
@@ -299,8 +299,8 @@ test('third shortcut can be disabled and saving failure preserves selected weapo
   assert.strictEqual(h.api.status().config.weapon, 'railgun');
   h.app.quit();
 });
-test('all weapons share the full-charge 500 ms hold and wait-for-next-click lifecycle', () => {
-  state.WEAPON_IDS.forEach(weapon => {
+test('timed weapons share the full-charge 500 ms hold and wait-for-next-click lifecycle', () => {
+  state.WEAPON_IDS.filter(weapon => state.WEAPONS[weapon].completion === 'timed').forEach(weapon => {
     const duration = state.WEAPONS[weapon].duration;
     const model = new state.ChargeState('always', weapon); model.setFocus(true, 0);
     model.mouse(1, true, 0); assert.strictEqual(model.snapshot(duration - 1).phase, 'charging');
@@ -356,10 +356,10 @@ test('quasar has green charging, cyan completion, no damage markers and persists
   model.mouse(1, true, 7200); assert.strictEqual(model.snapshot(7500).elapsed, 300);
   model.setFocus(false, 7600); model.setFocus(true, 7700); assert.strictEqual(model.snapshot(7700).elapsed, 0);
 });
-test('three-weapon shortcut cycle preserves native registrations and cancels quasar deadlines', () => {
+test('six-weapon shortcut cycle preserves native registrations and cancels quasar deadlines', () => {
   const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
   const resets = h.shortcuts.resets;
-  ['railgun', 'quasar', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
+  ['railgun', 'quasar', 'arc-thrower', 'purifier', 'loyalist', 'epoch', 'railgun', 'quasar'].forEach(weapon => {
     h.bindings.get('F3')(); h.advance(0); assert.strictEqual(h.api.status().config.weapon, weapon);
   });
   assert.strictEqual(h.shortcuts.resets, resets);
@@ -369,5 +369,38 @@ test('three-weapon shortcut cycle preserves native registrations and cancels qua
   h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 });
   old(); h.advance(500); assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'charging');
   h.app.quit();
+});
+
+test('release weapons hold cyan without timers and reset on early/full release and focus loss', () => {
+  ['arc-thrower', 'purifier', 'loyalist'].forEach(weapon => {
+    const duration = state.WEAPONS[weapon].duration;
+    state.MODES.forEach(mode => {
+      const m = new state.ChargeState(mode, weapon); m.setFocus(true, 0); m.mouse(2, true, 0); m.mouse(1, true, 0);
+      assert.strictEqual(state.chargeStyle(duration - 1, weapon).color, 'green');
+      assert.strictEqual(state.chargeStyle(duration, weapon).color, 'cyan');
+      assert.strictEqual(m.snapshot(duration).phase, 'complete'); assert.strictEqual(m.nextDeadline(), null);
+      assert.strictEqual(m.snapshot(duration + 10000).elapsed, mode === 'hidden' ? 0 : duration);
+      assert.strictEqual(m.snapshot(duration + 10000).visible, mode !== 'hidden');
+      m.mouse(1, false, duration + 10001); assert.strictEqual(m.snapshot(duration + 10001).elapsed, 0);
+      m.mouse(1, true, duration + 10002); m.mouse(1, false, duration + 10003);
+      assert.strictEqual(m.snapshot(duration + 10003).phase, 'idle');
+      m.mouse(1, true, duration + 10004); m.setFocus(false, duration * 2 + 10004); m.setFocus(true, duration * 2 + 10005);
+      assert.strictEqual(m.snapshot(duration * 2 + 10005).phase, 'idle');
+    });
+    const cfg = state.defaults(); cfg.weapon = weapon;
+    const file = path.join(temp, weapon + '.json'); configIO.writeConfig(file, cfg);
+    assert.deepStrictEqual(configIO.readConfig(file).config, cfg);
+  });
+});
+test('switching between timed and release weapons cancels old completion callbacks', () => {
+  const h = harness(); h.monitors[0].emit('state', { hasWindow: true, processName: 'helldivers2.exe' });
+  h.trays[0].menu.find(x => x.label === '当前武器').submenu[2].click();
+  h.hook.emit('mousedown', { button: 2 }); h.hook.emit('mousedown', { button: 1 }); h.advance(3000);
+  const old = h.timerHistory[h.timerHistory.length - 1];
+  h.bindings.get('F3')(); h.advance(0);
+  h.hook.emit('mouseup', { button: 1 }); h.hook.emit('mousedown', { button: 1 }); h.advance(1000);
+  old(); h.advance(10000); assert(h.windows[0].visible); assert.strictEqual(h.windows[0].last.data.phase, 'complete');
+  h.trays[0].menu.find(x => x.label === '当前武器').submenu[0].click();
+  assert.strictEqual(h.windows[0].last.data.elapsed, 0); h.app.quit();
 });
 console.log('\n' + count + ' tests passed.');

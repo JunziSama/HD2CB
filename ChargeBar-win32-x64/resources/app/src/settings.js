@@ -1,7 +1,12 @@
 'use strict';
 const { ipcRenderer } = require('electron');
-const { defaults, ACTIONS, WEAPONS } = require('./state');
+const { defaults, ACTIONS, WEAPONS, WEAPON_IDS } = require('./state');
 const byId = id => document.getElementById(id);
+WEAPON_IDS.forEach(weapon => {
+  const option = document.createElement('option');
+  option.value = weapon; option.textContent = WEAPONS[weapon].name;
+  byId('weapon-select').appendChild(option);
+});
 let dirty = {};
 let loaded = false;
 

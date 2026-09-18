@@ -77,7 +77,7 @@ if (!secondary) {
       if (phase === 'restore') {
         assert.strictEqual(api.status().config.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8');
         assert.strictEqual(api.status().config.hotkeys.quit.enabled, false);
-        assert.strictEqual(api.status().config.weapon, 'quasar');
+        assert.strictEqual(api.status().config.weapon, 'loyalist');
         assert.strictEqual(api.status().config.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
         pass('Restart restores saved custom hotkeys and independent enable switches');
         finish(); return;
@@ -199,6 +199,8 @@ if (!secondary) {
       assert.strictEqual(ui.key, 'F1');
       assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-key").value'), 'F3');
 
+      assert.strictEqual(await settings.webContents.executeJavaScript('document.getElementById("weapon-select").options.length'), 6);
+      await delay(150);
       await new Promise(resolve => settings.capturePage(image => {
         fs.writeFileSync(path.join(output, 'settings.png'), image.toPNG()); resolve();
       }));
@@ -208,14 +210,14 @@ if (!secondary) {
         'new Promise(resolve => { const ipc = require("electron").ipcRenderer; ipc.once("settings-result", (event, result) => resolve(result)); ' +
         'const draft = ' + JSON.stringify({ weapon, hotkeys }) + '; const select = document.getElementById("weapon-select"); select.value = draft.weapon; select.dispatchEvent(new Event("change")); ' +
         'Object.keys(draft.hotkeys).forEach(action => { const key = document.getElementById(action + "-key"); key.value = draft.hotkeys[action].accelerator; key.dispatchEvent(new Event("input")); const enabled = document.getElementById(action + "-enabled"); enabled.checked = draft.hotkeys[action].enabled; enabled.dispatchEvent(new Event("change")); }); document.getElementById("save").click(); })');
-      let result = await save('quasar', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
+      let result = await save('loyalist', { toggle: { enabled: true, accelerator: 'Ctrl+Shift+F8' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'Ctrl+Shift+F9' } });
       assert(result.ok, result.message);
       const saved = JSON.parse(fs.readFileSync(path.join(output, 'userData', 'settings.json'), 'utf8'));
       assert.strictEqual(saved.hotkeys.toggle.accelerator, 'Ctrl+Shift+F8'); assert.strictEqual(saved.hotkeys.quit.enabled, false);
-      assert.strictEqual(saved.weapon, 'quasar'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
-      assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('不会过载自爆') !== -1);
+      assert.strictEqual(saved.weapon, 'loyalist'); assert.strictEqual(saved.hotkeys.weapon.accelerator, 'Ctrl+Shift+F9');
+      assert((await settings.webContents.executeJavaScript('document.getElementById("weapon-description").textContent')).indexOf('0.75') !== -1);
       result = await save('epoch', { toggle: { enabled: true, accelerator: 'F2' }, quit: { enabled: false, accelerator: 'F2' }, weapon: { enabled: true, accelerator: 'F3' } });
-      assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'quasar');
+      assert(!result.ok); assert.strictEqual(api.status().config.weapon, 'loyalist');
       pass('Real renderer IPC saves custom shortcuts and independent switches; duplicate bindings rejected');
       settings.close(); assert.strictEqual(BrowserWindow.getAllWindows().length, 1);
       pass('Closing settings leaves the tray application running');
@@ -226,13 +228,13 @@ if (!secondary) {
         backgroundColor: '#101820', webPreferences: { nodeIntegration: true, contextIsolation: false } });
       await new Promise(resolve => { preview.webContents.once('did-finish-load', resolve); preview.loadFile(path.join(__dirname, '../src/index.html')); });
       preview.show();
-      for (const weapon of ['epoch', 'railgun', 'quasar']) {
+      for (const weapon of require('../src/state').WEAPON_IDS) {
         preview.webContents.send('charge-state', { visible: true, charging: false, elapsed: weapon === 'epoch' ? 2600 : 3000,
           weapon: weapon, phase: 'complete', notice: require('../src/state').WEAPONS[weapon].shortName });
         await delay(100);
         const visual = await preview.webContents.executeJavaScript('(() => { const label = document.getElementById("weaponNotice"); const box = label.getBoundingClientRect(); return { fits: box.left >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight, text: label.textContent, color: document.getElementById("fill").style.backgroundColor, markers: document.querySelectorAll(".marker").length }; })()');
-        assert(visual.fits, 'Weapon notice must not be clipped'); assert.strictEqual(visual.color, weapon === 'quasar' ? 'cyan' : 'red');
-        assert.strictEqual(visual.markers, weapon === 'quasar' ? 0 : 3);
+        assert(visual.fits, 'Weapon notice must not be clipped'); assert.strictEqual(visual.color, ['epoch', 'railgun'].indexOf(weapon) === -1 ? 'cyan' : 'red');
+        assert.strictEqual(visual.markers, require('../src/state').WEAPONS[weapon].markers.length);
         await new Promise(resolve => preview.capturePage(image => { fs.writeFileSync(path.join(output, 'overlay-' + weapon + '.png'), image.toPNG()); resolve(); }));
       }
       preview.close();
